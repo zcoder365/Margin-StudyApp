@@ -263,6 +263,256 @@ def create_course():
         "color": color,
         "termId": term_id,
     }), 201
+    
+# -----------------------------------------------------------------------------
+# project routes
+# -----------------------------------------------------------------------------
+@app.route("/api/projects", methods=["GET"])
+@require_auth
+def list_projects():
+    """
+    returns all projects for the current user, optionally filtered by courseId.
+    query param: ?courseId=xxx (optional — without it, returns ALL projects)
+    """
+    course_id = request.args.get("courseId")
+
+    # build the query — if courseId is provided, filter; otherwise get everything
+    projects_ref = user_doc(g.user_id).collection("projects")
+    if course_id:
+        projects_ref = projects_ref.where("courseId", "==", course_id)
+
+    projects = []
+    for doc in projects_ref.stream():
+        project_data = doc.to_dict()
+        project_data["id"] = doc.id
+
+        # firestore returns timestamps as DatetimeWithNanoseconds objects, which
+        # don't serialize to JSON cleanly. convert them to ISO strings here.
+        # (we'll need this pattern for tasks too — could refactor into a helper later)
+        if project_data.get("dueDate"):
+            project_data["dueDate"] = project_data["dueDate"].isoformat()
+        if project_data.get("createdAt"):
+            project_data["createdAt"] = project_data["createdAt"].isoformat()
+
+        projects.append(project_data)
+
+    return jsonify({"projects": projects})
+
+
+@app.route("/api/projects", methods=["POST"])
+@require_auth
+def create_project():
+    """
+    creates a new project under a course.
+    body: { "courseId": "xxx", "title": "midterm project", "dueDate": "2026-05-15" (optional) }
+    """
+    body = request.get_json(silent=True) or {}
+
+    course_id = body.get("courseId", "").strip()
+    title = body.get("title", "").strip()
+
+    # validate required fields
+    if not course_id:
+        return jsonify({"error": "courseId is required"}), 400
+    if not title:
+        return jsonify({"error": "project title is required"}), 400
+
+    # verify the course actually belongs to this user — paranoid but cheap.
+    # without this check, a malicious frontend could create projects under
+    # courseIds that don't exist (or worse, that belong to other users in
+    # some future schema variant). always validate foreign keys 🔒
+    course_ref = user_doc(g.user_id).collection("courses").document(course_id)
+    if not course_ref.get().exists:
+        return jsonify({"error": "course not found"}), 404
+
+    # parse due date if provided. expecting ISO format like "2026-05-15"
+    due_date = None
+    if body.get("dueDate"):
+        from datetime import datetime
+        try:
+            due_date = datetime.fromisoformat(body["dueDate"])
+        except ValueError:
+            return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
+
+    # create the project doc
+    project_ref = user_doc(g.user_id).collection("projects").document()
+    project_data = {
+        "courseId": course_id,
+        "title": title,
+        "dueDate": due_date,             # None if not provided, that's fine
+        "sourcePdfUrl": None,            # populated later when pdf upload is built
+        "status": "active",
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }
+    project_ref.set(project_data)
+
+    return jsonify({
+        "id": project_ref.id,
+        "courseId": course_id,
+        "title": title,
+        "dueDate": due_date.isoformat() if due_date else None,
+        "status": "active",
+    }), 201
+
+# -----------------------------------------------------------------------------
+# task routes
+# -----------------------------------------------------------------------------
+@app.route("/api/tasks", methods=["GET"])
+@require_auth
+def list_tasks():
+    """
+    returns tasks, optionally filtered by projectId.
+    query param: ?projectId=xxx (optional)
+    """
+    project_id = request.args.get("projectId")
+
+    tasks_ref = user_doc(g.user_id).collection("tasks")
+    if project_id:
+        tasks_ref = tasks_ref.where("projectId", "==", project_id)
+
+    # order by the `order` field so tasks render in the user's chosen order
+    # (or AI's order, on first generation). tie-break by createdAt for stability.
+    tasks_ref = tasks_ref.order_by("order")
+
+    tasks = []
+    for doc in tasks_ref.stream():
+        task_data = doc.to_dict()
+        task_data["id"] = doc.id
+
+        # serialize all the timestamp fields to ISO strings for JSON
+        for ts_field in ("scheduledDate", "originalScheduledDate", "completedAt", "createdAt"):
+            if task_data.get(ts_field):
+                task_data[ts_field] = task_data[ts_field].isoformat()
+
+        tasks.append(task_data)
+
+    return jsonify({"tasks": tasks})
+
+
+@app.route("/api/tasks", methods=["POST"])
+@require_auth
+def create_task():
+    """
+    creates a new task under a project.
+    body: { "projectId": "xxx", "title": "outline intro", "order": 0 (optional) }
+    """
+    body = request.get_json(silent=True) or {}
+
+    project_id = body.get("projectId", "").strip()
+    title = body.get("title", "").strip()
+
+    if not project_id:
+        return jsonify({"error": "projectId is required"}), 400
+    if not title:
+        return jsonify({"error": "task title is required"}), 400
+
+    # fetch the project to (1) verify it exists for this user and (2) grab
+    # its courseId so we can denormalize it onto the task (per our schema design)
+    project_ref = user_doc(g.user_id).collection("projects").document(project_id)
+    project_snapshot = project_ref.get()
+    if not project_snapshot.exists:
+        return jsonify({"error": "project not found"}), 404
+
+    course_id = project_snapshot.to_dict().get("courseId")
+
+    # if `order` isn't provided, put this task at the end of the list.
+    # we do this by counting existing tasks for this project — simple but works
+    # at v1 scale (don't do this with millions of tasks lol)
+    order = body.get("order")
+    if order is None:
+        existing_count = len(list(
+            user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).stream()
+        ))
+        order = existing_count
+
+    task_ref = user_doc(g.user_id).collection("tasks").document()
+    task_data = {
+        "projectId": project_id,
+        "courseId": course_id,           # denormalized for color-coding
+        "title": title,
+        "status": "pending",
+        "scheduledDate": None,
+        "scheduledBlockId": None,
+        "rescheduleCount": 0,
+        "originalScheduledDate": None,
+        "completedAt": None,
+        "aiGenerated": body.get("aiGenerated", False),
+        "order": order,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }
+    task_ref.set(task_data)
+
+    return jsonify({
+        "id": task_ref.id,
+        **{k: v for k, v in task_data.items() if k != "createdAt"},  # skip the sentinel
+    }), 201
+
+
+@app.route("/api/tasks/<task_id>", methods=["PATCH"])
+@require_auth
+def update_task(task_id):
+    """
+    updates a task's status, title, or scheduling info.
+    body: any subset of { "status", "title", "scheduledDate", "scheduledBlockId" }
+    """
+    body = request.get_json(silent=True) or {}
+
+    task_ref = user_doc(g.user_id).collection("tasks").document(task_id)
+    task_snapshot = task_ref.get()
+    if not task_snapshot.exists:
+        return jsonify({"error": "task not found"}), 404
+
+    current_data = task_snapshot.to_dict()
+    updates = {}
+
+    # only update fields that are actually in the request body. avoids accidentally
+    # blanking out fields when the frontend sends a partial update.
+    if "title" in body:
+        updates["title"] = body["title"].strip()
+
+    if "status" in body:
+        new_status = body["status"]
+        if new_status not in ("pending", "scheduled", "done"):
+            return jsonify({"error": "invalid status"}), 400
+        updates["status"] = new_status
+
+        # if marking as done, set the completedAt timestamp
+        if new_status == "done":
+            updates["completedAt"] = firestore.SERVER_TIMESTAMP
+
+    if "scheduledDate" in body:
+        from datetime import datetime
+        try:
+            new_date = datetime.fromisoformat(body["scheduledDate"]) if body["scheduledDate"] else None
+        except ValueError:
+            return jsonify({"error": "scheduledDate must be ISO format"}), 400
+
+        # rescheduling logic — if there's already a scheduledDate AND we're changing it,
+        # increment rescheduleCount. this is what powers the gentle "moved 2x" nudge 💛
+        existing_date = current_data.get("scheduledDate")
+        if existing_date and new_date and existing_date != new_date:
+            updates["rescheduleCount"] = current_data.get("rescheduleCount", 0) + 1
+        elif not existing_date and new_date:
+            # first time being scheduled — record the original date for sentimental purposes
+            updates["originalScheduledDate"] = new_date
+
+        updates["scheduledDate"] = new_date
+
+    if "scheduledBlockId" in body:
+        updates["scheduledBlockId"] = body["scheduledBlockId"]
+
+    if not updates:
+        return jsonify({"error": "no valid fields to update"}), 400
+
+    task_ref.update(updates)
+
+    # return the fresh state so the frontend can update its UI
+    fresh = task_ref.get().to_dict()
+    fresh["id"] = task_id
+    for ts_field in ("scheduledDate", "originalScheduledDate", "completedAt", "createdAt"):
+        if fresh.get(ts_field):
+            fresh[ts_field] = fresh[ts_field].isoformat()
+    return jsonify(fresh)
 
 # -----------------------------------------------------------------------------
 # entry point

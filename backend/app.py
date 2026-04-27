@@ -123,6 +123,146 @@ def me():
         "email": g.user_email,
     })
 
+# -----------------------------------------------------------------------------
+# helper: get user doc reference
+# -----------------------------------------------------------------------------
+def user_doc(user_id):
+    """shorthand for users/{userId} doc reference. saves us from typing this everywhere."""
+    return db.collection("users").document(user_id)
+
+
+# -----------------------------------------------------------------------------
+# user routes
+# -----------------------------------------------------------------------------
+@app.route("/api/users/init", methods=["POST"])
+@require_auth
+def init_user():
+    """
+    called by the frontend after a successful google sign-in.
+    creates the user's profile doc + a default term IF they don't already exist.
+    idempotent — safe to call on every login (won't overwrite existing data).
+    """
+    user_ref = user_doc(g.user_id)
+    user_snapshot = user_ref.get()
+
+    # if user already exists, just return their current state (no overwriting)
+    if user_snapshot.exists:
+        return jsonify({
+            "userId": g.user_id,
+            "isNewUser": False,
+            "user": user_snapshot.to_dict(),
+        })
+
+    # otherwise this is a brand new user — set up their account
+    # use a batch write so user creation + default term creation happen atomically
+    # (either both succeed or neither does — no half-set-up accounts 🔒)
+    batch = db.batch()
+
+    # parse displayName from the request body if provided (frontend sends this from google)
+    body = request.get_json(silent=True) or {}
+    display_name = body.get("displayName", "")
+
+    # create the default term first so we can reference its id in the user doc
+    term_ref = user_ref.collection("terms").document()  # auto-generates an id
+    batch.set(term_ref, {
+        "name": "current term",
+        "startDate": firestore.SERVER_TIMESTAMP,  # user can edit later
+        "endDate": None,
+        "isActive": True,
+    })
+
+    # now create the user doc, pointing currentTermId at the term we just made
+    batch.set(user_ref, {
+        "email": g.user_email,
+        "displayName": display_name,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "currentTermId": term_ref.id,
+    })
+
+    # commit both writes atomically
+    batch.commit()
+
+    # return the freshly-created user state to the frontend
+    return jsonify({
+        "userId": g.user_id,
+        "isNewUser": True,
+        "user": {
+            "email": g.user_email,
+            "displayName": display_name,
+            "currentTermId": term_ref.id,
+        },
+    })
+
+
+# -----------------------------------------------------------------------------
+# course routes
+# -----------------------------------------------------------------------------
+@app.route("/api/courses", methods=["GET"])
+@require_auth
+def list_courses():
+    """
+    returns all courses for the current user, optionally filtered by termId.
+    query param: ?termId=xxx (optional — defaults to current term)
+    """
+    # figure out which term to filter by
+    term_id = request.args.get("termId")
+    if not term_id:
+        # default to user's current term
+        user_snapshot = user_doc(g.user_id).get()
+        if not user_snapshot.exists:
+            return jsonify({"error": "user not initialized — call /api/users/init first"}), 400
+        term_id = user_snapshot.to_dict().get("currentTermId")
+
+    # query courses subcollection where termId matches
+    courses_ref = user_doc(g.user_id).collection("courses").where("termId", "==", term_id)
+    courses = []
+    for doc in courses_ref.stream():
+        course_data = doc.to_dict()
+        course_data["id"] = doc.id  # include the doc id so frontend can reference it
+        courses.append(course_data)
+
+    return jsonify({"courses": courses, "termId": term_id})
+
+
+@app.route("/api/courses", methods=["POST"])
+@require_auth
+def create_course():
+    """
+    creates a new course for the current user, in their current term.
+    body: { "name": "COMP 307", "color": "#a8d5ba" }
+    """
+    body = request.get_json(silent=True) or {}
+
+    # validate required fields — fail fast with a helpful error
+    name = body.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "course name is required"}), 400
+
+    color = body.get("color", "#cccccc")  # default gray if no color provided
+
+    # get the user's current term to attach this course to
+    user_snapshot = user_doc(g.user_id).get()
+    if not user_snapshot.exists:
+        return jsonify({"error": "user not initialized — call /api/users/init first"}), 400
+    term_id = user_snapshot.to_dict().get("currentTermId")
+
+    # create the course doc with auto-generated id
+    course_ref = user_doc(g.user_id).collection("courses").document()
+    course_data = {
+        "name": name,
+        "color": color,
+        "termId": term_id,
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }
+    course_ref.set(course_data)
+
+    # return the created course (with its id) so frontend can update its state
+    return jsonify({
+        "id": course_ref.id,
+        "name": name,
+        "color": color,
+        "termId": term_id,
+    }), 201
 
 # -----------------------------------------------------------------------------
 # entry point

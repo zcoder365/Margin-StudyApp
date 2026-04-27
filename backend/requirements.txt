@@ -1,0 +1,15 @@
+# web framework
+Flask==3.0.3
+Flask-Cors==5.0.0          # for letting the frontend talk to the backend during local dev
+
+# firebase
+firebase-admin==6.5.0      # admin SDK for verifying tokens + writing to firestore
+
+# anthropic (we'll need this when we get to the pdf → tasks step)
+anthropic==0.39.0
+
+# env vars
+python-dotenv==1.0.1       # loads .env file into os.environ
+
+# pdf parsing (for v1 pdf upload feature later)
+pypdf==4.3.1

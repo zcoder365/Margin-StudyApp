@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>margin 🌿</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!--
+    two main views: the signed-out landing screen, and the signed-in app.
+    we toggle visibility based on auth state. simple, no router needed for v1.
+  -->
+
+  <!-- signed-out view: just a sign-in button -->
+  <div id="signed-out-view" class="view">
+    <div class="landing">
+      <h1>margin 🌿</h1>
+      <p class="tagline">give yourself margin.</p>
+      <button id="sign-in-btn" class="primary-btn">sign in with google</button>
+    </div>
+  </div>
+
+  <!-- signed-in view: the actual app -->
+  <div id="signed-in-view" class="view hidden">
+    <header class="app-header">
+      <h1>margin 🌿</h1>
+      <div class="user-info">
+        <span id="user-email"></span>
+        <button id="sign-out-btn" class="text-btn">sign out</button>
+      </div>
+    </header>
+
+    <main class="app-main">
+      <section class="courses-section">
+        <div class="section-header">
+          <h2>your courses</h2>
+          <button id="add-course-btn" class="primary-btn">+ add course</button>
+        </div>
+
+        <!-- courses get rendered here as cards -->
+        <div id="courses-list" class="courses-list">
+          <!-- empty state shows when there are no courses yet -->
+          <p id="empty-state" class="empty-state">
+            no courses yet. add one to get started 💛
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- modal for creating a new course. hidden until user clicks "add course" -->
+  <div id="course-modal" class="modal hidden">
+    <div class="modal-content">
+      <h3>add a course</h3>
+      <label>
+        course name
+        <input type="text" id="course-name-input" placeholder="e.g. COMP 307" />
+      </label>
+      <label>
+        color
+        <input type="color" id="course-color-input" value="#a8d5ba" />
+      </label>
+      <div class="modal-actions">
+        <button id="cancel-course-btn" class="text-btn">cancel</button>
+        <button id="save-course-btn" class="primary-btn">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    firebase web SDK — loaded as ES modules from google's CDN.
+    we're using v10's modular API (smaller bundle than the old compat one).
+    our app code lives in app.js as a module.
+  -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

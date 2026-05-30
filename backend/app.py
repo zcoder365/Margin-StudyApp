@@ -116,7 +116,22 @@ def health():
 @app.route("/api/me", methods=["GET"])
 @require_auth
 def me():
-    return jsonify({"userId": g.user_id, "email": g.user_email})
+    snap = user_doc(g.user_id).get()
+    data = snap.to_dict() if snap.exists else {}
+    return jsonify({"userId": g.user_id, "email": g.user_email, "displayName": data.get("displayName", "")})
+
+
+@app.route("/api/me", methods=["PATCH"])
+@require_auth
+def update_me():
+    body = request.get_json(silent=True) or {}
+    updates = {}
+    if "displayName" in body:
+        updates["displayName"] = body["displayName"].strip()
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+    user_doc(g.user_id).update(updates)
+    return jsonify({"userId": g.user_id, **updates})
 
 
 # -----------------------------------------------------------------------------

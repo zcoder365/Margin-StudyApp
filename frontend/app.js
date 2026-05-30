@@ -12,6 +12,7 @@ import {
   signInWithPopup,
   signOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
 // ---------------------------------------------------------------------------
@@ -156,8 +157,9 @@ const saveScheduleBtn    = document.getElementById("save-schedule-btn");
 // ---------------------------------------------------------------------------
 // navigation
 // ---------------------------------------------------------------------------
+const viewProfile     = document.getElementById("view-profile");
 const viewGrades      = document.getElementById("view-grades");
-const VIEWS = { dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades };
+const VIEWS = { dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -191,6 +193,16 @@ function renderBreadcrumb(view) {
     cur.textContent = state.currentCourse.name;
     breadcrumb.appendChild(sep());
     breadcrumb.appendChild(cur);
+  }
+
+  if (view === "profile") {
+    breadcrumb.innerHTML = "";
+    breadcrumb.appendChild(sep());
+    const cur = document.createElement("span");
+    cur.className = "breadcrumb-current";
+    cur.textContent = "profile";
+    breadcrumb.appendChild(cur);
+    return;
   }
 
   if (view === "grades" && state.currentCourse) {
@@ -1438,6 +1450,68 @@ function pctToLetter(pct) {
   if (pct >= 67) return "D+";
   if (pct >= 60) return "D";
   return "F";
+}
+
+// ---------------------------------------------------------------------------
+// profile page
+// ---------------------------------------------------------------------------
+const profilePageBtn   = document.getElementById("profile-page-btn");
+const profileNameInput = document.getElementById("profile-name-input");
+const profileEmailDisp = document.getElementById("profile-email-display");
+const saveProfileBtn   = document.getElementById("save-profile-btn");
+const profileSaveMsg   = document.getElementById("profile-save-msg");
+const resetPwBtn       = document.getElementById("reset-pw-btn");
+const resetPwMsg       = document.getElementById("reset-pw-msg");
+
+profilePageBtn.addEventListener("click", async () => {
+  closeAllDropdowns();
+  showView("profile");
+  try {
+    const data = await api("/me");
+    profileNameInput.value = data.displayName || "";
+    profileEmailDisp.value = data.email || "";
+  } catch (err) {
+    console.error("failed to load profile:", err);
+  }
+});
+
+saveProfileBtn.addEventListener("click", async () => {
+  const displayName = profileNameInput.value.trim();
+  saveProfileBtn.disabled = true;
+  profileSaveMsg.classList.add("hidden");
+  try {
+    await api("/me", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName }),
+    });
+    showMsg(profileSaveMsg, "Changes saved.", "success");
+  } catch (err) {
+    showMsg(profileSaveMsg, `Couldn't save: ${err.message}`, "error");
+  } finally {
+    saveProfileBtn.disabled = false;
+  }
+});
+
+resetPwBtn.addEventListener("click", async () => {
+  const user = auth.currentUser;
+  if (!user?.email) return;
+  resetPwBtn.disabled = true;
+  resetPwMsg.classList.add("hidden");
+  try {
+    await sendPasswordResetEmail(auth, user.email);
+    showMsg(resetPwMsg, `Reset email sent to ${user.email}.`, "success");
+  } catch (err) {
+    showMsg(resetPwMsg, `Couldn't send email: ${err.message}`, "error");
+  } finally {
+    resetPwBtn.disabled = false;
+  }
+});
+
+function showMsg(el, text, type) {
+  el.textContent = text;
+  el.className = `profile-msg ${type}`;
+  el.classList.remove("hidden");
+  setTimeout(() => el.classList.add("hidden"), 5000);
 }
 
 // ---------------------------------------------------------------------------

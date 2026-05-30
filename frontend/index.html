@@ -55,6 +55,7 @@
           <div class="dropdown dropdown-right hidden" id="profile-dropdown">
             <div class="dropdown-info" id="user-email"></div>
             <div class="dropdown-divider"></div>
+            <button id="profile-page-btn" class="dropdown-item">Profile settings</button>
             <button id="sign-out-btn" class="dropdown-item">Sign out</button>
           </div>
         </div>
@@ -63,6 +64,37 @@
     </header>
 
     <main class="app-main">
+
+      <!-- ── profile ── -->
+      <div id="view-profile" class="hidden">
+        <div class="section-header">
+          <h2>Profile</h2>
+        </div>
+        <div class="profile-page">
+
+          <div class="profile-section">
+            <h3 class="profile-section-title">Account</h3>
+            <div class="profile-field">
+              <label>Display name</label>
+              <input type="text" id="profile-name-input" placeholder="Your name" />
+            </div>
+            <div class="profile-field">
+              <label>Email</label>
+              <input type="text" id="profile-email-display" disabled />
+            </div>
+            <button id="save-profile-btn" class="btn btn-primary">Save changes</button>
+            <p id="profile-save-msg" class="profile-msg hidden"></p>
+          </div>
+
+          <div class="profile-section">
+            <h3 class="profile-section-title">Password</h3>
+            <p class="profile-hint">You signed in with Google. Click below to receive an email that lets you set a password for direct sign-in too.</p>
+            <button id="reset-pw-btn" class="btn btn-ghost">Send password reset email</button>
+            <p id="reset-pw-msg" class="profile-msg hidden"></p>
+          </div>
+
+        </div>
+      </div>
 
       <!-- ── dashboard ── -->
       <div id="view-dashboard">

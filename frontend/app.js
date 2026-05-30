@@ -83,10 +83,15 @@ const signInBtn       = document.getElementById("sign-in-btn");
 const signOutBtn      = document.getElementById("sign-out-btn");
 const breadcrumb      = document.getElementById("breadcrumb");
 const termSelect      = document.getElementById("term-select");
+const termMenuBtn     = document.getElementById("term-menu-btn");
+const termDropdown    = document.getElementById("term-dropdown");
 const editTermBtn     = document.getElementById("edit-term-btn");
 const deleteTermBtn   = document.getElementById("delete-term-btn");
 const newTermBtn      = document.getElementById("new-term-btn");
 const scheduleBtn     = document.getElementById("schedule-btn");
+const profileBtn      = document.getElementById("profile-btn");
+const profileDropdown = document.getElementById("profile-dropdown");
+const profileInitials = document.getElementById("profile-initials");
 
 // views
 const viewDashboard   = document.getElementById("view-dashboard");
@@ -241,6 +246,27 @@ function renderBreadcrumb(view) {
 // ---------------------------------------------------------------------------
 // auth
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// dropdown toggles
+// ---------------------------------------------------------------------------
+function toggleDropdown(btn, menu) {
+  const isOpen = !menu.classList.contains("hidden");
+  closeAllDropdowns();
+  if (!isOpen) menu.classList.remove("hidden");
+}
+
+function closeAllDropdowns() {
+  [termDropdown, profileDropdown].forEach(d => d?.classList.add("hidden"));
+}
+
+termMenuBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDropdown(termMenuBtn, termDropdown); });
+profileBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDropdown(profileBtn, profileDropdown); });
+document.addEventListener("click", closeAllDropdowns);
+
+
+// ---------------------------------------------------------------------------
+// auth
+// ---------------------------------------------------------------------------
 signInBtn.addEventListener("click", async () => {
   try {
     await signInWithPopup(auth, provider);
@@ -257,6 +283,7 @@ onAuthStateChanged(auth, async (user) => {
     signedOutView.classList.add("hidden");
     signedInView.classList.remove("hidden");
     userEmailEl.textContent = user.email;
+    profileInitials.textContent = (user.displayName || user.email || "?")[0].toUpperCase();
 
     try {
       await api("/users/init", {

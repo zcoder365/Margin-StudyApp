@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>margin 🌿</title>
+  <title>margin</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,9 +11,9 @@
   <!-- signed-out landing -->
   <div id="signed-out-view" class="view">
     <div class="landing">
-      <h1>margin 🌿</h1>
+      <div class="landing-logo">margin 🌿</div>
       <p class="tagline">give yourself margin.</p>
-      <button id="sign-in-btn" class="primary-btn">sign in with google</button>
+      <button id="sign-in-btn" class="btn btn-primary btn-lg">Continue with Google</button>
     </div>
   </div>
 
@@ -23,99 +23,113 @@
     <header class="app-header">
       <div class="header-left">
         <span class="app-logo">margin 🌿</span>
-        <!-- breadcrumb grows as user drills in -->
         <nav class="breadcrumb" id="breadcrumb" aria-label="breadcrumb"></nav>
       </div>
+
       <div class="header-right">
-        <select id="term-select" class="term-select" title="switch term"></select>
-        <button id="edit-term-btn" class="icon-btn" title="rename term">✏️</button>
-        <button id="delete-term-btn" class="icon-btn" title="delete term">🗑</button>
-        <button id="new-term-btn" class="icon-btn" title="new term">+ term</button>
-        <button id="schedule-btn" class="icon-btn" title="edit my schedule">📅 schedule</button>
-        <span id="user-email" class="user-email"></span>
-        <button id="sign-out-btn" class="text-btn">sign out</button>
+
+        <!-- term selector + management -->
+        <div class="term-area">
+          <select id="term-select" class="term-select"></select>
+          <div class="dropdown-wrap" id="term-menu-wrap">
+            <button class="btn btn-icon" id="term-menu-btn" title="manage terms" aria-haspopup="true">
+              <span class="dots">···</span>
+            </button>
+            <div class="dropdown hidden" id="term-dropdown">
+              <button id="new-term-btn" class="dropdown-item">New term</button>
+              <button id="edit-term-btn" class="dropdown-item">Rename term</button>
+              <div class="dropdown-divider"></div>
+              <button id="delete-term-btn" class="dropdown-item danger">Delete term</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- schedule -->
+        <button id="schedule-btn" class="btn btn-ghost" title="my weekly schedule">Schedule</button>
+
+        <!-- profile -->
+        <div class="dropdown-wrap" id="profile-menu-wrap">
+          <button class="profile-btn" id="profile-btn" aria-haspopup="true">
+            <span id="profile-initials">?</span>
+          </button>
+          <div class="dropdown dropdown-right hidden" id="profile-dropdown">
+            <div class="dropdown-info" id="user-email"></div>
+            <div class="dropdown-divider"></div>
+            <button id="sign-out-btn" class="dropdown-item">Sign out</button>
+          </div>
+        </div>
+
       </div>
     </header>
 
     <main class="app-main">
 
-      <!-- ── view: dashboard (courses) ── -->
+      <!-- ── dashboard ── -->
       <div id="view-dashboard">
         <div class="section-header">
-          <h2>your courses</h2>
-          <button id="add-course-btn" class="primary-btn">+ add course</button>
+          <h2>Your courses</h2>
+          <button id="add-course-btn" class="btn btn-primary">+ Add course</button>
         </div>
         <div id="courses-list" class="courses-list">
-          <p id="courses-empty" class="empty-state">no courses yet. add one to get started 💛</p>
+          <p id="courses-empty" class="empty-state">No courses yet. Add one to get started 💛</p>
         </div>
       </div>
 
-      <!-- ── view: course detail (assignments list) ── -->
+      <!-- ── course detail ── -->
       <div id="view-course" class="hidden">
         <div class="section-header">
-          <h2 id="course-title">course</h2>
-          <div style="display:flex;gap:0.6rem;">
-            <button id="grade-calc-btn" class="secondary-btn">📊 grade calculator</button>
-            <button id="add-assignment-btn" class="primary-btn">+ add assignment</button>
+          <h2 id="course-title">Course</h2>
+          <div class="header-actions">
+            <button id="grade-calc-btn" class="btn btn-ghost">Grade calculator</button>
+            <button id="add-assignment-btn" class="btn btn-primary">+ Add assignment</button>
           </div>
         </div>
         <div id="assignments-list" class="assignments-list">
-          <p id="assignments-empty" class="empty-state">no assignments yet. add one to get started 💛</p>
+          <p id="assignments-empty" class="empty-state">No assignments yet. Add one to get started 💛</p>
         </div>
       </div>
 
-      <!-- ── view: grade calculator ── -->
+      <!-- ── grade calculator ── -->
       <div id="view-grades" class="hidden">
-
         <div class="section-header">
-          <h2 id="grades-course-title">grade calculator</h2>
-          <div style="display:flex;gap:0.6rem;">
-            <button id="edit-scheme-btn" class="secondary-btn">⚙️ edit categories</button>
-          </div>
+          <h2 id="grades-course-title">Grade calculator</h2>
+          <button id="edit-scheme-btn" class="btn btn-ghost">Edit categories</button>
         </div>
-
         <div class="grades-layout">
-
-          <!-- current grade summary -->
           <div class="grade-summary-card">
             <div class="grade-summary-top">
               <div>
                 <div class="grade-letter" id="grade-letter">—</div>
-                <div class="grade-pct" id="grade-pct">no grades yet</div>
+                <div class="grade-pct" id="grade-pct">No grades yet</div>
               </div>
               <div class="target-section">
                 <label class="target-label">
-                  target grade (%)
+                  Target grade (%)
                   <input type="number" id="target-input" min="0" max="100" placeholder="e.g. 90" class="target-input" />
                 </label>
                 <div id="target-result" class="target-result"></div>
               </div>
             </div>
           </div>
-
-          <!-- categories + grade entries -->
           <div id="categories-list" class="categories-list"></div>
-
-          <p id="grades-empty" class="empty-state">set up your grading categories first using "edit categories" above.</p>
-
+          <p id="grades-empty" class="empty-state">Set up your grading categories first using "Edit categories" above.</p>
         </div>
       </div>
 
-      <!-- ── view: assignment detail (split) ── -->
+      <!-- ── assignment detail ── -->
       <div id="view-assignment" class="hidden">
 
         <div class="assignment-header">
           <div class="assignment-meta">
-            <h2 id="assignment-title">assignment</h2>
+            <h2 id="assignment-title">Assignment</h2>
             <span id="assignment-due" class="due-badge"></span>
           </div>
-          <div class="assignment-actions">
-            <button id="upload-pdf-btn" class="secondary-btn">📄 upload pdf</button>
-            <button id="auto-schedule-btn" class="secondary-btn">🗓 auto-schedule tasks</button>
+          <div class="header-actions">
+            <button id="upload-pdf-btn" class="btn btn-ghost">Upload PDF</button>
+            <button id="auto-schedule-btn" class="btn btn-ghost">Auto-schedule</button>
           </div>
         </div>
 
-        <!-- time estimate banner -->
         <div id="estimate-banner" class="estimate-banner hidden">
           <span id="estimate-text"></span>
           <div class="progress-track">
@@ -123,161 +137,141 @@
           </div>
         </div>
 
-        <!-- hidden file input, triggered by upload-pdf-btn -->
         <input type="file" id="pdf-file-input" accept="application/pdf" class="hidden" />
 
-        <!-- processing spinner (shown while claude is working) -->
         <div id="pdf-spinner" class="spinner-overlay hidden">
           <div class="spinner-box">
             <div class="spinner"></div>
-            <p>analysing your assignment…</p>
+            <p>Analysing your assignment…</p>
           </div>
         </div>
 
         <div class="split-view">
-          <!-- left: assignment text / upload prompt -->
           <div class="split-left" id="assignment-text-panel">
             <div id="assignment-text-empty" class="upload-prompt">
-              <p>upload your assignment PDF and margin will break it into tasks for you.</p>
-              <button class="primary-btn" id="upload-prompt-btn">📄 upload pdf</button>
+              <p>Upload your assignment PDF and margin will display it here.</p>
+              <button class="btn btn-primary" id="upload-prompt-btn">Upload PDF</button>
             </div>
             <div id="assignment-text-content" class="assignment-text hidden"></div>
           </div>
-
-          <!-- right: task list -->
           <div class="split-right">
             <div class="tasks-header">
-              <h3>tasks</h3>
-              <button id="add-task-btn" class="text-btn small">+ add manually</button>
+              <h3>Tasks</h3>
+              <button id="add-task-btn" class="btn btn-ghost btn-sm">+ Add manually</button>
             </div>
             <div id="task-list" class="task-list">
-              <p id="tasks-empty" class="empty-state small">no tasks yet — upload a pdf or add manually.</p>
+              <p id="tasks-empty" class="empty-state small">No tasks yet — upload a PDF or add manually.</p>
             </div>
           </div>
         </div>
 
       </div>
-      <!-- end view-assignment -->
 
     </main>
   </div>
-  <!-- end signed-in-view -->
 
 
-  <!-- ════════════════ modals ════════════════ -->
+  <!-- ════ modals ════ -->
 
-  <!-- add course -->
   <div id="course-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <h3>add a course</h3>
-      <label>
-        course name
-        <input type="text" id="course-name-input" placeholder="e.g. COMP 307" />
-      </label>
-      <label>
-        color
-        <input type="color" id="course-color-input" value="#a8d5ba" />
-      </label>
-      <div class="modal-actions">
-        <button id="cancel-course-btn" class="text-btn">cancel</button>
-        <button id="save-course-btn" class="primary-btn">save</button>
+      <div class="modal-header">
+        <h3>Add a course</h3>
+        <button class="modal-close" id="cancel-course-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Course name <input type="text" id="course-name-input" placeholder="e.g. COMP 307" /></label>
+        <label>Color <input type="color" id="course-color-input" value="#a8d5ba" /></label>
+      </div>
+      <div class="modal-footer">
+        <button id="save-course-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- add assignment -->
   <div id="assignment-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <h3>add an assignment</h3>
-      <label>
-        assignment title
-        <input type="text" id="assignment-title-input" placeholder="e.g. Problem Set 3" />
-      </label>
-      <label>
-        due date
-        <input type="date" id="assignment-due-input" />
-      </label>
-      <div class="modal-actions">
-        <button id="cancel-assignment-btn" class="text-btn">cancel</button>
-        <button id="save-assignment-btn" class="primary-btn">save</button>
+      <div class="modal-header">
+        <h3>Add an assignment</h3>
+        <button class="modal-close" id="cancel-assignment-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Title <input type="text" id="assignment-title-input" placeholder="e.g. Problem Set 3" /></label>
+        <label>Due date <input type="date" id="assignment-due-input" /></label>
+      </div>
+      <div class="modal-footer">
+        <button id="save-assignment-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- add task manually -->
   <div id="task-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <h3>add a task</h3>
-      <label>
-        task description
-        <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" />
-      </label>
-      <label>
-        estimated time (minutes)
-        <input type="number" id="task-minutes-input" min="1" placeholder="30" />
-      </label>
-      <div class="modal-actions">
-        <button id="cancel-task-btn" class="text-btn">cancel</button>
-        <button id="save-task-btn" class="primary-btn">save</button>
+      <div class="modal-header">
+        <h3>Add a task</h3>
+        <button class="modal-close" id="cancel-task-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Description <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" /></label>
+        <label>Estimated time (min) <input type="number" id="task-minutes-input" min="1" placeholder="30" /></label>
+      </div>
+      <div class="modal-footer">
+        <button id="save-task-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- grading scheme editor -->
   <div id="scheme-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content wide">
-      <h3>grading categories</h3>
-      <p class="modal-hint">weights should add up to 100%. e.g. Homework 40%, Midterm 30%, Final 30%.</p>
-      <div id="scheme-rows" class="scheme-rows"></div>
-      <button id="add-category-btn" class="text-btn">+ add category</button>
-      <div id="scheme-weight-total" class="weight-total"></div>
-      <div class="modal-actions">
-        <button id="cancel-scheme-btn" class="text-btn">cancel</button>
-        <button id="save-scheme-btn" class="primary-btn">save</button>
+      <div class="modal-header">
+        <h3>Grading categories</h3>
+        <button class="modal-close" id="cancel-scheme-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">Weights should add up to 100%. e.g. Homework 40%, Midterm 30%, Final 30%.</p>
+        <div id="scheme-rows" class="scheme-rows"></div>
+        <button id="add-category-btn" class="btn btn-ghost btn-sm">+ Add category</button>
+        <div id="scheme-weight-total" class="weight-total"></div>
+      </div>
+      <div class="modal-footer">
+        <button id="save-scheme-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- add / edit grade entry -->
   <div id="grade-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
-      <h3 id="grade-modal-title">add grade</h3>
-      <label>
-        assignment name
-        <input type="text" id="grade-name-input" placeholder="e.g. Homework 3" />
-      </label>
-      <label>
-        score
-        <input type="number" id="grade-score-input" min="0" placeholder="85" />
-      </label>
-      <label>
-        out of
-        <input type="number" id="grade-total-input" min="1" placeholder="100" />
-      </label>
-      <div class="modal-actions">
-        <button id="cancel-grade-btn" class="text-btn">cancel</button>
-        <button id="save-grade-btn" class="primary-btn">save</button>
+      <div class="modal-header">
+        <h3 id="grade-modal-title">Add grade</h3>
+        <button class="modal-close" id="cancel-grade-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <label>Assignment name <input type="text" id="grade-name-input" placeholder="e.g. Homework 3" /></label>
+        <label>Score <input type="number" id="grade-score-input" min="0" placeholder="85" /></label>
+        <label>Out of <input type="number" id="grade-total-input" min="1" placeholder="100" /></label>
+      </div>
+      <div class="modal-footer">
+        <button id="save-grade-btn" class="btn btn-primary">Save</button>
       </div>
     </div>
   </div>
 
-  <!-- schedule editor -->
   <div id="schedule-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content wide">
-      <h3>my weekly schedule</h3>
-      <p class="modal-hint">add your classes, work shifts, and other recurring commitments so margin can find your free time.</p>
-
-      <div id="schedule-blocks-list" class="schedule-blocks-list"></div>
-
-      <button id="add-block-btn" class="text-btn">+ add commitment</button>
-
-      <div class="modal-actions">
-        <button id="cancel-schedule-btn" class="text-btn">cancel</button>
-        <button id="save-schedule-btn" class="primary-btn">save schedule</button>
+      <div class="modal-header">
+        <h3>Weekly schedule</h3>
+        <button class="modal-close" id="cancel-schedule-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">Add your classes, work shifts, and other recurring commitments so margin can find your free time.</p>
+        <div id="schedule-blocks-list" class="schedule-blocks-list"></div>
+        <button id="add-block-btn" class="btn btn-ghost btn-sm">+ Add commitment</button>
+      </div>
+      <div class="modal-footer">
+        <button id="save-schedule-btn" class="btn btn-primary">Save schedule</button>
       </div>
     </div>
   </div>
-
 
   <script type="module" src="app.js"></script>
 </body>

@@ -68,11 +68,46 @@ async function api(path, options = {}) {
 // app state
 // ---------------------------------------------------------------------------
 let state = {
+  currentTerm: null,     // { id, name }
   currentCourse: null,   // { id, name, color }
   currentProject: null,  // { id, title, dueDate, extractedText, totalEstimatedMinutes }
   tasks: [],             // tasks for currentProject
 };
 
+
+// ---------------------------------------------------------------------------
+// card ··· menu builder
+// ---------------------------------------------------------------------------
+function buildCardMenu(items) {
+  const wrap = document.createElement("div");
+  wrap.className = "card-menu-wrap";
+
+  const btn = document.createElement("button");
+  btn.className = "card-menu-btn";
+  btn.textContent = "···";
+  btn.title = "options";
+
+  const dropdown = document.createElement("div");
+  dropdown.className = "card-dropdown hidden";
+
+  for (const item of items) {
+    const el = document.createElement("button");
+    el.className = "dropdown-item" + (item.danger ? " danger" : "");
+    el.textContent = item.label;
+    el.addEventListener("click", (e) => { e.stopPropagation(); dropdown.classList.add("hidden"); item.onClick(); });
+    dropdown.appendChild(el);
+  }
+
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAllDropdowns();
+    dropdown.classList.remove("hidden");
+  });
+
+  wrap.appendChild(btn);
+  wrap.appendChild(dropdown);
+  return wrap;
+}
 
 // ---------------------------------------------------------------------------
 // DOM references
@@ -157,9 +192,10 @@ const saveScheduleBtn    = document.getElementById("save-schedule-btn");
 // ---------------------------------------------------------------------------
 // navigation
 // ---------------------------------------------------------------------------
+const viewHome        = document.getElementById("view-home");
 const viewProfile     = document.getElementById("view-profile");
 const viewGrades      = document.getElementById("view-grades");
-const VIEWS = { dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile };
+const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -178,79 +214,60 @@ function renderBreadcrumb(view) {
     return s;
   };
 
-  if (view === "dashboard") return;
+  const crumbLink = (label, onClick) => {
+    const el = document.createElement("span");
+    el.className = "breadcrumb-link";
+    el.textContent = label;
+    el.addEventListener("click", onClick);
+    return el;
+  };
 
-  const dashLink = document.createElement("span");
-  dashLink.className = "breadcrumb-link";
-  dashLink.textContent = "courses";
-  dashLink.addEventListener("click", () => showView("dashboard"));
-  breadcrumb.appendChild(sep());
-  breadcrumb.appendChild(dashLink);
+  const crumbCurrent = (label) => {
+    const el = document.createElement("span");
+    el.className = "breadcrumb-current";
+    el.textContent = label;
+    return el;
+  };
 
-  if (view === "course" && state.currentCourse) {
-    const cur = document.createElement("span");
-    cur.className = "breadcrumb-current";
-    cur.textContent = state.currentCourse.name;
-    breadcrumb.appendChild(sep());
-    breadcrumb.appendChild(cur);
+  const goHome = () => { showView("home"); loadHome(); };
+  const goTerm = () => showView("dashboard");
+
+  if (view === "home") return;
+  if (view === "profile") { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
+
+  if (view === "dashboard") {
+    breadcrumb.append(sep(), crumbLink("home", goHome));
+    if (state.currentTerm) breadcrumb.append(sep(), crumbCurrent(state.currentTerm.name));
+    return;
   }
 
-  if (view === "profile") {
-    breadcrumb.innerHTML = "";
-    breadcrumb.appendChild(sep());
-    const cur = document.createElement("span");
-    cur.className = "breadcrumb-current";
-    cur.textContent = "profile";
-    breadcrumb.appendChild(cur);
+  if (view === "course" && state.currentCourse) {
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbCurrent(state.currentCourse.name),
+    );
     return;
   }
 
   if (view === "grades" && state.currentCourse) {
-    breadcrumb.innerHTML = "";
-    breadcrumb.appendChild(sep());
-    const dl = document.createElement("span");
-    dl.className = "breadcrumb-link";
-    dl.textContent = "courses";
-    dl.addEventListener("click", () => showView("dashboard"));
-    breadcrumb.appendChild(dl);
-    breadcrumb.appendChild(sep());
-    const cl = document.createElement("span");
-    cl.className = "breadcrumb-link";
-    cl.textContent = state.currentCourse.name;
-    cl.addEventListener("click", () => { showView("course"); loadAssignments(state.currentCourse.id); });
-    breadcrumb.appendChild(cl);
-    breadcrumb.appendChild(sep());
-    const cur = document.createElement("span");
-    cur.className = "breadcrumb-current";
-    cur.textContent = "grade calculator";
-    breadcrumb.appendChild(cur);
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbLink(state.currentCourse.name, () => { showView("course"); loadAssignments(state.currentCourse.id); }),
+      sep(), crumbCurrent("grade calculator"),
+    );
     return;
   }
 
   if (view === "assignment" && state.currentCourse && state.currentProject) {
-    const courseLink = document.createElement("span");
-    courseLink.className = "breadcrumb-link";
-    courseLink.textContent = state.currentCourse.name;
-    courseLink.addEventListener("click", () => {
-      showView("course");
-      loadAssignments(state.currentCourse.id);
-    });
-    // replace the static dash link with a clickable course link
-    breadcrumb.innerHTML = "";
-    breadcrumb.appendChild(sep());
-    const dl2 = document.createElement("span");
-    dl2.className = "breadcrumb-link";
-    dl2.textContent = "courses";
-    dl2.addEventListener("click", () => showView("dashboard"));
-    breadcrumb.appendChild(dl2);
-    breadcrumb.appendChild(sep());
-    breadcrumb.appendChild(courseLink);
-
-    const cur = document.createElement("span");
-    cur.className = "breadcrumb-current";
-    cur.textContent = state.currentProject.title;
-    breadcrumb.appendChild(sep());
-    breadcrumb.appendChild(cur);
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbLink(state.currentCourse.name, () => { showView("course"); loadAssignments(state.currentCourse.id); }),
+      sep(), crumbCurrent(state.currentProject.title),
+    );
+    return;
   }
 }
 
@@ -269,6 +286,7 @@ function toggleDropdown(btn, menu) {
 
 function closeAllDropdowns() {
   [termDropdown, profileDropdown].forEach(d => d?.classList.add("hidden"));
+  document.querySelectorAll(".card-dropdown").forEach(d => d.classList.add("hidden"));
 }
 
 termMenuBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDropdown(termMenuBtn, termDropdown); });
@@ -302,9 +320,9 @@ onAuthStateChanged(auth, async (user) => {
         method: "POST",
         body: JSON.stringify({ displayName: user.displayName || "" }),
       });
-      showView("dashboard");
+      showView("home");
       await loadTerms();
-      await loadCourses();
+      await loadHome();
     } catch (err) {
       console.error("init failed:", err);
       alert(`oops: ${err.message}`);
@@ -318,7 +336,139 @@ onAuthStateChanged(auth, async (user) => {
 
 
 // ---------------------------------------------------------------------------
-// terms
+// logo → home
+// ---------------------------------------------------------------------------
+document.getElementById("logo-btn").addEventListener("click", () => {
+  showView("home");
+  loadHome();
+});
+
+// ---------------------------------------------------------------------------
+// home (terms grid)
+// ---------------------------------------------------------------------------
+const termsGrid    = document.getElementById("terms-grid");
+const termsEmpty   = document.getElementById("terms-empty");
+const addTermBtn   = document.getElementById("add-term-btn");
+
+addTermBtn.addEventListener("click", async () => {
+  const name = prompt("Name this term (e.g. Fall 2026):");
+  if (!name?.trim()) return;
+  try {
+    const term = await api("/terms", {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim(), setAsCurrent: true }),
+    });
+    await loadTerms();
+    termSelect.value = term.id;
+    await loadHome();
+  } catch (err) {
+    alert(`Couldn't create term: ${err.message}`);
+  }
+});
+
+async function loadHome() {
+  try {
+    const [termsData, coursesData] = await Promise.all([
+      api("/terms"),
+      api("/courses?termId=all"),
+    ]);
+    renderHome(termsData.terms, coursesData.courses);
+  } catch (err) {
+    console.error("failed to load home:", err);
+  }
+}
+
+function renderHome(terms, allCourses) {
+  termsGrid.innerHTML = "";
+
+  if (!terms.length) {
+    termsGrid.appendChild(termsEmpty);
+    termsEmpty.classList.remove("hidden");
+    return;
+  }
+
+  termsEmpty.classList.add("hidden");
+
+  // count courses per term
+  const countByTerm = {};
+  for (const c of allCourses) {
+    countByTerm[c.termId] = (countByTerm[c.termId] || 0) + 1;
+  }
+
+  // find current term id from the select
+  const currentTermId = termSelect.value;
+
+  for (const term of terms) {
+    const card = document.createElement("div");
+    card.className = "term-card";
+
+    const top = document.createElement("div");
+    top.className = "term-card-top";
+
+    const name = document.createElement("div");
+    name.className = "term-card-name";
+    name.textContent = term.name;
+    top.appendChild(name);
+
+    if (term.id === currentTermId) {
+      const badge = document.createElement("span");
+      badge.className = "term-active-badge";
+      badge.textContent = "current";
+      top.appendChild(badge);
+    }
+
+    card.appendChild(top);
+
+    const meta = document.createElement("div");
+    meta.className = "term-card-meta";
+    const count = countByTerm[term.id] || 0;
+    meta.textContent = count === 1 ? "1 course" : `${count} courses`;
+    card.appendChild(meta);
+
+    // ··· menu
+    card.appendChild(buildCardMenu([
+      { label: "Rename", onClick: () => renameTerm(term) },
+      { label: "Delete", danger: true, onClick: () => deleteTerm(term) },
+    ]));
+
+    card.addEventListener("click", () => openTerm(term));
+    termsGrid.appendChild(card);
+  }
+}
+
+async function openTerm(term) {
+  state.currentTerm = term;
+  termSelect.value = term.id;
+  document.getElementById("course-title").textContent = term.name;
+  showView("dashboard");
+  await loadCourses(term.id);
+}
+
+async function renameTerm(term) {
+  const name = prompt("Rename term:", term.name);
+  if (!name?.trim() || name.trim() === term.name) return;
+  try {
+    await api(`/terms/${term.id}`, { method: "PATCH", body: JSON.stringify({ name: name.trim() }) });
+    await loadTerms();
+    await loadHome();
+  } catch (err) {
+    alert(`Couldn't rename: ${err.message}`);
+  }
+}
+
+async function deleteTerm(term) {
+  if (!confirm(`Delete "${term.name}" and all its courses and assignments? This can't be undone.`)) return;
+  try {
+    await api(`/terms/${term.id}`, { method: "DELETE" });
+    await loadTerms();
+    await loadHome();
+  } catch (err) {
+    alert(`Couldn't delete: ${err.message}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// terms (header select)
 // ---------------------------------------------------------------------------
 async function loadTerms() {
   try {
@@ -428,24 +578,10 @@ function renderCourses(courses) {
     heading.textContent = course.name;
     card.appendChild(heading);
 
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-
-    const editBtn = document.createElement("button");
-    editBtn.className = "card-action-btn";
-    editBtn.textContent = "✏️";
-    editBtn.title = "edit";
-    editBtn.addEventListener("click", (e) => { e.stopPropagation(); editCourse(course); });
-
-    const delBtn = document.createElement("button");
-    delBtn.className = "card-action-btn delete";
-    delBtn.textContent = "🗑";
-    delBtn.title = "delete";
-    delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteCourse(course); });
-
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-    card.appendChild(actions);
+    card.appendChild(buildCardMenu([
+      { label: "Edit", onClick: () => editCourse(course) },
+      { label: "Delete", danger: true, onClick: () => deleteCourse(course) },
+    ]));
 
     card.addEventListener("click", () => openCourse(course));
     coursesList.appendChild(card);
@@ -573,24 +709,10 @@ function renderAssignments(projects) {
     body.appendChild(meta);
     card.appendChild(body);
 
-    const actions = document.createElement("div");
-    actions.className = "card-actions";
-
-    const editBtn = document.createElement("button");
-    editBtn.className = "card-action-btn";
-    editBtn.textContent = "✏️";
-    editBtn.title = "edit";
-    editBtn.addEventListener("click", (e) => { e.stopPropagation(); openAssignmentModal(project); });
-
-    const delBtn = document.createElement("button");
-    delBtn.className = "card-action-btn delete";
-    delBtn.textContent = "🗑";
-    delBtn.title = "delete";
-    delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteAssignment(project); });
-
-    actions.appendChild(editBtn);
-    actions.appendChild(delBtn);
-    card.appendChild(actions);
+    card.appendChild(buildCardMenu([
+      { label: "Edit", onClick: () => openAssignmentModal(project) },
+      { label: "Delete", danger: true, onClick: () => deleteAssignment(project) },
+    ]));
 
     card.addEventListener("click", () => openAssignment(project));
     assignmentsList.appendChild(card);

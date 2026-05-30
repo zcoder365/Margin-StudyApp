@@ -269,13 +269,15 @@ def delete_term(term_id):
 @require_auth
 def list_courses():
     term_id = request.args.get("termId")
-    if not term_id:
-        user_snapshot = user_doc(g.user_id).get()
-        if not user_snapshot.exists:
-            return jsonify({"error": "user not initialized"}), 400
-        term_id = user_snapshot.to_dict().get("currentTermId")
-
-    courses_ref = user_doc(g.user_id).collection("courses").where("termId", "==", term_id)
+    if term_id == "all":
+        courses_ref = user_doc(g.user_id).collection("courses")
+    else:
+        if not term_id:
+            user_snapshot = user_doc(g.user_id).get()
+            if not user_snapshot.exists:
+                return jsonify({"error": "user not initialized"}), 400
+            term_id = user_snapshot.to_dict().get("currentTermId")
+        courses_ref = user_doc(g.user_id).collection("courses").where("termId", "==", term_id)
     courses = []
     for doc in courses_ref.stream():
         c = doc.to_dict()

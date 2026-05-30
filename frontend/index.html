@@ -22,7 +22,7 @@
 
     <header class="app-header">
       <div class="header-left">
-        <span class="app-logo">margin 🌿</span>
+        <button class="app-logo" id="logo-btn">margin 🌿</button>
         <nav class="breadcrumb" id="breadcrumb" aria-label="breadcrumb"></nav>
       </div>
 
@@ -64,6 +64,17 @@
     </header>
 
     <main class="app-main">
+
+      <!-- ── home (terms grid) ── -->
+      <div id="view-home">
+        <div class="section-header">
+          <h2>Your terms</h2>
+          <button id="add-term-btn" class="btn btn-primary">+ Add term</button>
+        </div>
+        <div id="terms-grid" class="terms-grid">
+          <p id="terms-empty" class="empty-state">No terms yet. Add one to get started 💛</p>
+        </div>
+      </div>
 
       <!-- ── profile ── -->
       <div id="view-profile" class="hidden">

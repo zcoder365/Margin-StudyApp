@@ -54,10 +54,50 @@
       <div id="view-course" class="hidden">
         <div class="section-header">
           <h2 id="course-title">course</h2>
-          <button id="add-assignment-btn" class="primary-btn">+ add assignment</button>
+          <div style="display:flex;gap:0.6rem;">
+            <button id="grade-calc-btn" class="secondary-btn">📊 grade calculator</button>
+            <button id="add-assignment-btn" class="primary-btn">+ add assignment</button>
+          </div>
         </div>
         <div id="assignments-list" class="assignments-list">
           <p id="assignments-empty" class="empty-state">no assignments yet. add one to get started 💛</p>
+        </div>
+      </div>
+
+      <!-- ── view: grade calculator ── -->
+      <div id="view-grades" class="hidden">
+
+        <div class="section-header">
+          <h2 id="grades-course-title">grade calculator</h2>
+          <div style="display:flex;gap:0.6rem;">
+            <button id="edit-scheme-btn" class="secondary-btn">⚙️ edit categories</button>
+          </div>
+        </div>
+
+        <div class="grades-layout">
+
+          <!-- current grade summary -->
+          <div class="grade-summary-card">
+            <div class="grade-summary-top">
+              <div>
+                <div class="grade-letter" id="grade-letter">—</div>
+                <div class="grade-pct" id="grade-pct">no grades yet</div>
+              </div>
+              <div class="target-section">
+                <label class="target-label">
+                  target grade (%)
+                  <input type="number" id="target-input" min="0" max="100" placeholder="e.g. 90" class="target-input" />
+                </label>
+                <div id="target-result" class="target-result"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- categories + grade entries -->
+          <div id="categories-list" class="categories-list"></div>
+
+          <p id="grades-empty" class="empty-state">set up your grading categories first using "edit categories" above.</p>
+
         </div>
       </div>
 
@@ -179,6 +219,44 @@
       <div class="modal-actions">
         <button id="cancel-task-btn" class="text-btn">cancel</button>
         <button id="save-task-btn" class="primary-btn">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- grading scheme editor -->
+  <div id="scheme-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content wide">
+      <h3>grading categories</h3>
+      <p class="modal-hint">weights should add up to 100%. e.g. Homework 40%, Midterm 30%, Final 30%.</p>
+      <div id="scheme-rows" class="scheme-rows"></div>
+      <button id="add-category-btn" class="text-btn">+ add category</button>
+      <div id="scheme-weight-total" class="weight-total"></div>
+      <div class="modal-actions">
+        <button id="cancel-scheme-btn" class="text-btn">cancel</button>
+        <button id="save-scheme-btn" class="primary-btn">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- add / edit grade entry -->
+  <div id="grade-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <h3 id="grade-modal-title">add grade</h3>
+      <label>
+        assignment name
+        <input type="text" id="grade-name-input" placeholder="e.g. Homework 3" />
+      </label>
+      <label>
+        score
+        <input type="number" id="grade-score-input" min="0" placeholder="85" />
+      </label>
+      <label>
+        out of
+        <input type="number" id="grade-total-input" min="1" placeholder="100" />
+      </label>
+      <div class="modal-actions">
+        <button id="cancel-grade-btn" class="text-btn">cancel</button>
+        <button id="save-grade-btn" class="primary-btn">save</button>
       </div>
     </div>
   </div>

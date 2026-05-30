@@ -518,6 +518,120 @@ def upload_assignment_pdf(project_id):
 
 
 # -----------------------------------------------------------------------------
+# grading
+# -----------------------------------------------------------------------------
+@app.route("/api/courses/<course_id>/grading", methods=["GET"])
+@require_auth
+def get_grading(course_id):
+    course_ref = user_doc(g.user_id).collection("courses").document(course_id)
+    if not course_ref.get().exists:
+        return jsonify({"error": "course not found"}), 404
+
+    scheme_snap = course_ref.collection("grading").document("scheme").get()
+    categories = scheme_snap.to_dict().get("categories", []) if scheme_snap.exists else []
+
+    grades = []
+    for doc in course_ref.collection("grades").stream():
+        entry = doc.to_dict()
+        entry["id"] = doc.id
+        serialize_timestamps(entry, ["createdAt"])
+        grades.append(entry)
+
+    return jsonify({"categories": categories, "grades": grades})
+
+
+@app.route("/api/courses/<course_id>/grading", methods=["POST"])
+@require_auth
+def save_grading_scheme(course_id):
+    course_ref = user_doc(g.user_id).collection("courses").document(course_id)
+    if not course_ref.get().exists:
+        return jsonify({"error": "course not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    categories = body.get("categories", [])
+
+    for cat in categories:
+        if not cat.get("name") or cat.get("weight") is None:
+            return jsonify({"error": "each category needs a name and weight"}), 400
+
+    course_ref.collection("grading").document("scheme").set({"categories": categories})
+    return jsonify({"categories": categories})
+
+
+@app.route("/api/courses/<course_id>/grades", methods=["POST"])
+@require_auth
+def add_grade(course_id):
+    course_ref = user_doc(g.user_id).collection("courses").document(course_id)
+    if not course_ref.get().exists:
+        return jsonify({"error": "course not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    category_id = body.get("categoryId", "").strip()
+    name = body.get("name", "").strip()
+    score = body.get("score")
+    total = body.get("total")
+
+    if not category_id or not name:
+        return jsonify({"error": "categoryId and name are required"}), 400
+    if score is None or total is None:
+        return jsonify({"error": "score and total are required"}), 400
+
+    grade_ref = course_ref.collection("grades").document()
+    grade_data = {
+        "categoryId": category_id,
+        "name": name,
+        "score": float(score),
+        "total": float(total),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }
+    grade_ref.set(grade_data)
+
+    row = {k: v for k, v in grade_data.items() if k != "createdAt"}
+    row["id"] = grade_ref.id
+    return jsonify(row), 201
+
+
+@app.route("/api/courses/<course_id>/grades/<grade_id>", methods=["PATCH"])
+@require_auth
+def update_grade(course_id, grade_id):
+    grade_ref = (
+        user_doc(g.user_id).collection("courses").document(course_id)
+        .collection("grades").document(grade_id)
+    )
+    if not grade_ref.get().exists:
+        return jsonify({"error": "grade not found"}), 404
+
+    body = request.get_json(silent=True) or {}
+    updates = {}
+    if "name" in body:
+        updates["name"] = body["name"].strip()
+    if "score" in body:
+        updates["score"] = float(body["score"])
+    if "total" in body:
+        updates["total"] = float(body["total"])
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+
+    grade_ref.update(updates)
+    fresh = grade_ref.get().to_dict()
+    fresh["id"] = grade_id
+    return jsonify(fresh)
+
+
+@app.route("/api/courses/<course_id>/grades/<grade_id>", methods=["DELETE"])
+@require_auth
+def delete_grade(course_id, grade_id):
+    grade_ref = (
+        user_doc(g.user_id).collection("courses").document(course_id)
+        .collection("grades").document(grade_id)
+    )
+    if not grade_ref.get().exists:
+        return jsonify({"error": "grade not found"}), 404
+    grade_ref.delete()
+    return jsonify({"deleted": grade_id})
+
+
+# -----------------------------------------------------------------------------
 # tasks
 # -----------------------------------------------------------------------------
 @app.route("/api/tasks", methods=["GET"])

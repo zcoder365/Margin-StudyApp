@@ -151,7 +151,8 @@ const saveScheduleBtn    = document.getElementById("save-schedule-btn");
 // ---------------------------------------------------------------------------
 // navigation
 // ---------------------------------------------------------------------------
-const VIEWS = { dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment };
+const viewGrades      = document.getElementById("view-grades");
+const VIEWS = { dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -185,6 +186,28 @@ function renderBreadcrumb(view) {
     cur.textContent = state.currentCourse.name;
     breadcrumb.appendChild(sep());
     breadcrumb.appendChild(cur);
+  }
+
+  if (view === "grades" && state.currentCourse) {
+    breadcrumb.innerHTML = "";
+    breadcrumb.appendChild(sep());
+    const dl = document.createElement("span");
+    dl.className = "breadcrumb-link";
+    dl.textContent = "courses";
+    dl.addEventListener("click", () => showView("dashboard"));
+    breadcrumb.appendChild(dl);
+    breadcrumb.appendChild(sep());
+    const cl = document.createElement("span");
+    cl.className = "breadcrumb-link";
+    cl.textContent = state.currentCourse.name;
+    cl.addEventListener("click", () => { showView("course"); loadAssignments(state.currentCourse.id); });
+    breadcrumb.appendChild(cl);
+    breadcrumb.appendChild(sep());
+    const cur = document.createElement("span");
+    cur.className = "breadcrumb-current";
+    cur.textContent = "grade calculator";
+    breadcrumb.appendChild(cur);
+    return;
   }
 
   if (view === "assignment" && state.currentCourse && state.currentProject) {
@@ -985,6 +1008,410 @@ saveScheduleBtn.addEventListener("click", async () => {
   }
 });
 
+
+// ---------------------------------------------------------------------------
+// grade calculator
+// ---------------------------------------------------------------------------
+const gradeCalcBtn    = document.getElementById("grade-calc-btn");
+const gradesCourseTitle = document.getElementById("grades-course-title");
+const editSchemeBtn   = document.getElementById("edit-scheme-btn");
+const categoriesList  = document.getElementById("categories-list");
+const gradesEmpty     = document.getElementById("grades-empty");
+const gradeLetter     = document.getElementById("grade-letter");
+const gradePct        = document.getElementById("grade-pct");
+const targetInput     = document.getElementById("target-input");
+const targetResult    = document.getElementById("target-result");
+
+const schemeModal     = document.getElementById("scheme-modal");
+const schemeRows      = document.getElementById("scheme-rows");
+const addCategoryBtn  = document.getElementById("add-category-btn");
+const cancelSchemeBtn = document.getElementById("cancel-scheme-btn");
+const saveSchemeBtn   = document.getElementById("save-scheme-btn");
+const schemeWeightTotal = document.getElementById("scheme-weight-total");
+
+const gradeModal      = document.getElementById("grade-modal");
+const gradeModalTitle = document.getElementById("grade-modal-title");
+const gradeNameInput  = document.getElementById("grade-name-input");
+const gradeScoreInput = document.getElementById("grade-score-input");
+const gradeTotalInput = document.getElementById("grade-total-input");
+const cancelGradeBtn  = document.getElementById("cancel-grade-btn");
+const saveGradeBtn    = document.getElementById("save-grade-btn");
+
+let gradesState = { categories: [], grades: [] };
+let editingGrade = null; // { id, categoryId } when editing an existing entry
+
+gradeCalcBtn.addEventListener("click", async () => {
+  if (!state.currentCourse) return;
+  gradesCourseTitle.textContent = `${state.currentCourse.name} — grade calculator`;
+  showView("grades");
+  await loadGrades();
+});
+
+async function loadGrades() {
+  try {
+    const data = await api(`/courses/${state.currentCourse.id}/grading`);
+    gradesState = data;
+    renderGrades();
+  } catch (err) {
+    console.error("failed to load grades:", err);
+  }
+}
+
+function renderGrades() {
+  const { categories, grades } = gradesState;
+  categoriesList.innerHTML = "";
+
+  if (!categories.length) {
+    gradesEmpty.classList.remove("hidden");
+    gradeLetter.textContent = "—";
+    gradePct.textContent = "no grades yet";
+    return;
+  }
+
+  gradesEmpty.classList.add("hidden");
+
+  // compute per-category averages
+  const catAverages = {};
+  for (const cat of categories) {
+    const entries = grades.filter(g => g.categoryId === cat.id);
+    if (entries.length) {
+      const avg = entries.reduce((s, g) => s + (g.score / g.total) * 100, 0) / entries.length;
+      catAverages[cat.id] = avg;
+    }
+  }
+
+  // overall weighted grade (only count categories that have entries)
+  const totalWeight = categories.reduce((s, c) => s + c.weight, 0);
+  let weightedSum = 0;
+  let coveredWeight = 0;
+  for (const cat of categories) {
+    if (catAverages[cat.id] !== undefined) {
+      weightedSum += (cat.weight / totalWeight) * catAverages[cat.id];
+      coveredWeight += cat.weight;
+    }
+  }
+
+  const currentGrade = coveredWeight > 0 ? (weightedSum * totalWeight / coveredWeight) : null;
+
+  if (currentGrade !== null) {
+    gradeLetter.textContent = pctToLetter(currentGrade);
+    gradePct.textContent = `${currentGrade.toFixed(1)}% current grade`;
+  } else {
+    gradeLetter.textContent = "—";
+    gradePct.textContent = "no grades entered yet";
+  }
+
+  updateTargetResult(currentGrade, categories, catAverages, totalWeight);
+
+  // render each category block
+  for (const cat of categories) {
+    const entries = grades.filter(g => g.categoryId === cat.id);
+    const avg = catAverages[cat.id];
+
+    const block = document.createElement("div");
+    block.className = "category-block";
+
+    // header
+    const header = document.createElement("div");
+    header.className = "category-header";
+
+    const left = document.createElement("div");
+    left.className = "category-header-left";
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "category-name";
+    nameEl.textContent = cat.name;
+
+    const weightEl = document.createElement("span");
+    weightEl.className = "category-weight";
+    weightEl.textContent = `${cat.weight}%`;
+
+    left.appendChild(nameEl);
+    left.appendChild(weightEl);
+
+    const avgEl = document.createElement("span");
+    avgEl.className = "category-avg";
+    avgEl.textContent = avg !== undefined ? `avg: ${avg.toFixed(1)}%` : "no grades yet";
+
+    header.appendChild(left);
+    header.appendChild(avgEl);
+    block.appendChild(header);
+
+    // grade entries
+    const entriesEl = document.createElement("div");
+    entriesEl.className = "grade-entries";
+
+    for (const entry of entries) {
+      entriesEl.appendChild(buildGradeEntryRow(entry, cat.id));
+    }
+
+    // add grade button
+    const addRow = document.createElement("div");
+    addRow.className = "add-grade-row";
+    const addBtn = document.createElement("button");
+    addBtn.className = "text-btn small";
+    addBtn.textContent = "+ add grade";
+    addBtn.addEventListener("click", () => openGradeModal(cat.id));
+    addRow.appendChild(addBtn);
+    entriesEl.appendChild(addRow);
+
+    block.appendChild(entriesEl);
+    categoriesList.appendChild(block);
+  }
+}
+
+function buildGradeEntryRow(entry, categoryId) {
+  const row = document.createElement("div");
+  row.className = "grade-entry-row";
+
+  const name = document.createElement("span");
+  name.className = "grade-entry-name";
+  name.textContent = entry.name;
+
+  const score = document.createElement("span");
+  score.className = "grade-entry-score";
+  score.textContent = `${entry.score} / ${entry.total}`;
+
+  const pct = document.createElement("span");
+  pct.className = "grade-entry-pct";
+  pct.textContent = `${((entry.score / entry.total) * 100).toFixed(1)}%`;
+
+  const actions = document.createElement("div");
+  actions.className = "grade-entry-actions";
+
+  const editBtn = document.createElement("button");
+  editBtn.className = "card-action-btn";
+  editBtn.textContent = "✏️";
+  editBtn.addEventListener("click", () => openGradeModal(categoryId, entry));
+
+  const delBtn = document.createElement("button");
+  delBtn.className = "card-action-btn delete";
+  delBtn.textContent = "🗑";
+  delBtn.addEventListener("click", () => deleteGradeEntry(entry));
+
+  actions.appendChild(editBtn);
+  actions.appendChild(delBtn);
+
+  row.appendChild(name);
+  row.appendChild(score);
+  row.appendChild(pct);
+  row.appendChild(actions);
+  return row;
+}
+
+function openGradeModal(categoryId, entry = null) {
+  editingGrade = entry ? { id: entry.id, categoryId } : { id: null, categoryId };
+  gradeModalTitle.textContent = entry ? "edit grade" : "add grade";
+  gradeNameInput.value = entry ? entry.name : "";
+  gradeScoreInput.value = entry ? entry.score : "";
+  gradeTotalInput.value = entry ? entry.total : "100";
+  gradeModal.classList.remove("hidden");
+  gradeNameInput.focus();
+}
+
+cancelGradeBtn.addEventListener("click", () => gradeModal.classList.add("hidden"));
+
+saveGradeBtn.addEventListener("click", async () => {
+  const name = gradeNameInput.value.trim();
+  const score = parseFloat(gradeScoreInput.value);
+  const total = parseFloat(gradeTotalInput.value);
+
+  if (!name) { alert("give this grade a name 💛"); return; }
+  if (isNaN(score) || isNaN(total) || total <= 0) { alert("enter a valid score and total"); return; }
+
+  saveGradeBtn.disabled = true;
+  try {
+    if (editingGrade.id) {
+      const updated = await api(`/courses/${state.currentCourse.id}/grades/${editingGrade.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, score, total }),
+      });
+      gradesState.grades = gradesState.grades.map(g => g.id === updated.id ? updated : g);
+    } else {
+      const created = await api(`/courses/${state.currentCourse.id}/grades`, {
+        method: "POST",
+        body: JSON.stringify({ categoryId: editingGrade.categoryId, name, score, total }),
+      });
+      gradesState.grades.push(created);
+    }
+    gradeModal.classList.add("hidden");
+    renderGrades();
+  } catch (err) {
+    alert(`couldn't save: ${err.message}`);
+  } finally {
+    saveGradeBtn.disabled = false;
+    editingGrade = null;
+  }
+});
+
+gradeNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveGradeBtn.click(); });
+
+async function deleteGradeEntry(entry) {
+  if (!confirm(`Delete "${entry.name}"?`)) return;
+  try {
+    await api(`/courses/${state.currentCourse.id}/grades/${entry.id}`, { method: "DELETE" });
+    gradesState.grades = gradesState.grades.filter(g => g.id !== entry.id);
+    renderGrades();
+  } catch (err) {
+    alert(`couldn't delete: ${err.message}`);
+  }
+}
+
+// target grade calculator
+targetInput.addEventListener("input", () => {
+  const { categories, grades } = gradesState;
+  const totalWeight = categories.reduce((s, c) => s + c.weight, 0);
+  const catAverages = {};
+  for (const cat of categories) {
+    const entries = grades.filter(g => g.categoryId === cat.id);
+    if (entries.length) {
+      catAverages[cat.id] = entries.reduce((s, g) => s + (g.score / g.total) * 100, 0) / entries.length;
+    }
+  }
+  let weightedSum = 0, coveredWeight = 0;
+  for (const cat of categories) {
+    if (catAverages[cat.id] !== undefined) {
+      weightedSum += (cat.weight / totalWeight) * catAverages[cat.id];
+      coveredWeight += cat.weight;
+    }
+  }
+  const currentGrade = coveredWeight > 0 ? (weightedSum * totalWeight / coveredWeight) : null;
+  updateTargetResult(currentGrade, categories, catAverages, totalWeight);
+});
+
+function updateTargetResult(currentGrade, categories, catAverages, totalWeight) {
+  const target = parseFloat(targetInput.value);
+  if (isNaN(target) || !categories.length) { targetResult.textContent = ""; return; }
+
+  const remaining = categories.filter(c => catAverages[c.id] === undefined);
+  const remainingWeight = remaining.reduce((s, c) => s + c.weight, 0);
+
+  if (remainingWeight === 0) {
+    targetResult.textContent = currentGrade >= target
+      ? "you've already hit your target 🎉"
+      : "all grades are in — final grade is set.";
+    return;
+  }
+
+  // points already locked in
+  let lockedPoints = 0;
+  for (const cat of categories) {
+    if (catAverages[cat.id] !== undefined) {
+      lockedPoints += (cat.weight / totalWeight) * catAverages[cat.id];
+    }
+  }
+
+  // need: target = lockedPoints + (remainingWeight/totalWeight) * neededAvg
+  const neededAvg = ((target - lockedPoints * totalWeight / totalWeight) / (remainingWeight / totalWeight));
+
+  if (neededAvg <= 0) {
+    targetResult.textContent = "you've already locked in enough to hit your target 🎉";
+  } else if (neededAvg > 100) {
+    targetResult.textContent = `you'd need ${neededAvg.toFixed(1)}% on remaining work — the target may not be reachable.`;
+  } else {
+    const catNames = remaining.map(c => c.name).join(", ");
+    targetResult.textContent = `you need ~${neededAvg.toFixed(1)}% average on: ${catNames}.`;
+  }
+}
+
+// scheme editor
+editSchemeBtn.addEventListener("click", () => {
+  schemeRows.innerHTML = "";
+  for (const cat of gradesState.categories) {
+    addSchemeRow(cat);
+  }
+  if (!gradesState.categories.length) addSchemeRow();
+  updateWeightTotal();
+  schemeModal.classList.remove("hidden");
+});
+
+function addSchemeRow(cat = {}) {
+  const row = document.createElement("div");
+  row.className = "scheme-row";
+
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.placeholder = "category name";
+  nameInput.value = cat.name || "";
+
+  const weightInput = document.createElement("input");
+  weightInput.type = "number";
+  weightInput.min = "0";
+  weightInput.max = "100";
+  weightInput.placeholder = "%";
+  weightInput.value = cat.weight !== undefined ? cat.weight : "";
+  weightInput.addEventListener("input", updateWeightTotal);
+
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "remove-block-btn";
+  removeBtn.textContent = "✕";
+  removeBtn.addEventListener("click", () => { row.remove(); updateWeightTotal(); });
+
+  row.appendChild(nameInput);
+  row.appendChild(weightInput);
+  row.appendChild(removeBtn);
+  schemeRows.appendChild(row);
+}
+
+function updateWeightTotal() {
+  const rows = schemeRows.querySelectorAll(".scheme-row");
+  const total = Array.from(rows).reduce((s, row) => {
+    const val = parseFloat(row.querySelectorAll("input")[1].value) || 0;
+    return s + val;
+  }, 0);
+  schemeWeightTotal.textContent = `total: ${total}%`;
+  schemeWeightTotal.className = "weight-total " + (total === 100 ? "ok" : total > 100 ? "over" : "under");
+}
+
+addCategoryBtn.addEventListener("click", () => { addSchemeRow(); updateWeightTotal(); });
+cancelSchemeBtn.addEventListener("click", () => schemeModal.classList.add("hidden"));
+
+saveSchemeBtn.addEventListener("click", async () => {
+  const rows = schemeRows.querySelectorAll(".scheme-row");
+  const categories = Array.from(rows).map((row, i) => {
+    const inputs = row.querySelectorAll("input");
+    return {
+      id: gradesState.categories[i]?.id || `cat_${Date.now()}_${i}`,
+      name: inputs[0].value.trim(),
+      weight: parseFloat(inputs[1].value) || 0,
+    };
+  }).filter(c => c.name);
+
+  const total = categories.reduce((s, c) => s + c.weight, 0);
+  if (Math.abs(total - 100) > 0.01) {
+    alert(`weights add up to ${total}% — they need to equal 100%.`);
+    return;
+  }
+
+  saveSchemeBtn.disabled = true;
+  try {
+    const data = await api(`/courses/${state.currentCourse.id}/grading`, {
+      method: "POST",
+      body: JSON.stringify({ categories }),
+    });
+    gradesState.categories = data.categories;
+    schemeModal.classList.add("hidden");
+    renderGrades();
+  } catch (err) {
+    alert(`couldn't save: ${err.message}`);
+  } finally {
+    saveSchemeBtn.disabled = false;
+  }
+});
+
+function pctToLetter(pct) {
+  if (pct >= 93) return "A";
+  if (pct >= 90) return "A−";
+  if (pct >= 87) return "B+";
+  if (pct >= 83) return "B";
+  if (pct >= 80) return "B−";
+  if (pct >= 77) return "C+";
+  if (pct >= 73) return "C";
+  if (pct >= 70) return "C−";
+  if (pct >= 67) return "D+";
+  if (pct >= 60) return "D";
+  return "F";
+}
 
 // ---------------------------------------------------------------------------
 // date helpers

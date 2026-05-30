@@ -567,6 +567,197 @@ body {
 
 .time-spent-input:focus { outline: none; border-color: #aaa; }
 
+/* ---------- grade calculator ---------- */
+.grades-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.grade-summary-card {
+  background: white;
+  border: 1px solid #ebe9e4;
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+
+.grade-summary-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 2rem;
+  flex-wrap: wrap;
+}
+
+.grade-letter {
+  font-size: 3rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.grade-pct {
+  font-size: 1rem;
+  color: #888;
+  margin-top: 0.25rem;
+}
+
+.target-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.target-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #666;
+  align-items: flex-end;
+}
+
+.target-input {
+  width: 100px;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #ddd;
+  border-radius: 7px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  text-align: right;
+}
+
+.target-input:focus { outline: none; border-color: #aaa; }
+
+.target-result {
+  font-size: 0.85rem;
+  color: #555;
+  text-align: right;
+  max-width: 260px;
+}
+
+.categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.category-block {
+  background: white;
+  border: 1px solid #ebe9e4;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.category-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid #f0ede8;
+  gap: 1rem;
+}
+
+.category-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.category-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.category-weight {
+  font-size: 0.8rem;
+  color: #888;
+}
+
+.category-avg {
+  font-size: 0.85rem;
+  color: #555;
+  font-weight: 500;
+}
+
+.grade-entries {
+  padding: 0.5rem 0;
+}
+
+.grade-entry-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1.25rem;
+  border-bottom: 1px solid #f8f7f5;
+  font-size: 0.88rem;
+}
+
+.grade-entry-row:last-child { border-bottom: none; }
+
+.grade-entry-name { flex: 1; }
+
+.grade-entry-score {
+  color: #444;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.grade-entry-pct {
+  font-size: 0.78rem;
+  color: #888;
+  white-space: nowrap;
+  min-width: 42px;
+  text-align: right;
+}
+
+.grade-entry-actions {
+  display: flex;
+  gap: 0.3rem;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.grade-entry-row:hover .grade-entry-actions { opacity: 1; }
+
+.add-grade-row {
+  padding: 0.6rem 1.25rem;
+}
+
+/* scheme editor */
+.scheme-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.scheme-row {
+  display: grid;
+  grid-template-columns: 1fr 90px auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.scheme-row input {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.scheme-row input:focus { outline: none; border-color: #aaa; }
+
+.weight-total {
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.weight-total.ok { color: #2a6634; }
+.weight-total.over { color: #c0392b; }
+.weight-total.under { color: #856404; }
+
 /* ---------- schedule modal ---------- */
 .modal-hint {
   font-size: 0.85rem;

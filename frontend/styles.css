@@ -178,6 +178,9 @@ body {
 }
 
 .app-logo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 1.05rem;
   font-weight: 700;
   letter-spacing: -0.3px;
@@ -188,7 +191,7 @@ body {
   cursor: pointer;
   font-family: var(--font);
   color: var(--text-1);
-  padding: 0.25rem 0.4rem;
+  padding: 0.25rem 0.5rem;
   border-radius: var(--radius-sm);
   transition: background var(--transition);
 }

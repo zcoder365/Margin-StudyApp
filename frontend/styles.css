@@ -96,6 +96,20 @@ body {
   font-size: 0.85rem;
 }
 
+.term-select {
+  padding: 0.45rem 0.65rem;
+  border: 1px solid #e0ddd8;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: white;
+  color: #444;
+  cursor: pointer;
+  max-width: 160px;
+}
+
+.term-select:focus { outline: none; border-color: #aaa; }
+
 .icon-btn {
   background: none;
   border: 1px solid #e0ddd8;

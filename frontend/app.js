@@ -82,6 +82,8 @@ const userEmailEl     = document.getElementById("user-email");
 const signInBtn       = document.getElementById("sign-in-btn");
 const signOutBtn      = document.getElementById("sign-out-btn");
 const breadcrumb      = document.getElementById("breadcrumb");
+const termSelect      = document.getElementById("term-select");
+const newTermBtn      = document.getElementById("new-term-btn");
 const scheduleBtn     = document.getElementById("schedule-btn");
 
 // views
@@ -237,6 +239,7 @@ onAuthStateChanged(auth, async (user) => {
         body: JSON.stringify({ displayName: user.displayName || "" }),
       });
       showView("dashboard");
+      await loadTerms();
       await loadCourses();
     } catch (err) {
       console.error("init failed:", err);
@@ -251,11 +254,59 @@ onAuthStateChanged(auth, async (user) => {
 
 
 // ---------------------------------------------------------------------------
+// terms
+// ---------------------------------------------------------------------------
+async function loadTerms() {
+  try {
+    const data = await api("/terms");
+    renderTermSelect(data.terms);
+  } catch (err) {
+    console.error("failed to load terms:", err);
+  }
+}
+
+function renderTermSelect(terms) {
+  termSelect.innerHTML = "";
+  for (const term of terms) {
+    const opt = document.createElement("option");
+    opt.value = term.id;
+    opt.textContent = term.name;
+    termSelect.appendChild(opt);
+  }
+}
+
+termSelect.addEventListener("change", async () => {
+  const termId = termSelect.value;
+  if (!termId) return;
+  showView("dashboard");
+  await loadCourses(termId);
+});
+
+newTermBtn.addEventListener("click", async () => {
+  const name = prompt("name this term (e.g. Fall 2026):");
+  if (!name || !name.trim()) return;
+  try {
+    const term = await api("/terms", {
+      method: "POST",
+      body: JSON.stringify({ name: name.trim(), setAsCurrent: true }),
+    });
+    await loadTerms();
+    // select the new term
+    termSelect.value = term.id;
+    showView("dashboard");
+    await loadCourses(term.id);
+  } catch (err) {
+    alert(`couldn't create term: ${err.message}`);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // courses
 // ---------------------------------------------------------------------------
-async function loadCourses() {
+async function loadCourses(termId) {
   try {
-    const data = await api("/courses");
+    const query = termId ? `?termId=${termId}` : "";
+    const data = await api(`/courses${query}`);
     renderCourses(data.courses);
   } catch (err) {
     console.error("failed to load courses:", err);

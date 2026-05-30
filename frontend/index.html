@@ -7,12 +7,8 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <!--
-    two main views: the signed-out landing screen, and the signed-in app.
-    we toggle visibility based on auth state. simple, no router needed for v1.
-  -->
 
-  <!-- signed-out view: just a sign-in button -->
+  <!-- signed-out landing -->
   <div id="signed-out-view" class="view">
     <div class="landing">
       <h1>margin 🌿</h1>
@@ -21,36 +17,113 @@
     </div>
   </div>
 
-  <!-- signed-in view: the actual app -->
+  <!-- signed-in shell -->
   <div id="signed-in-view" class="view hidden">
+
     <header class="app-header">
-      <h1>margin 🌿</h1>
-      <div class="user-info">
-        <span id="user-email"></span>
+      <div class="header-left">
+        <span class="app-logo">margin 🌿</span>
+        <!-- breadcrumb grows as user drills in -->
+        <nav class="breadcrumb" id="breadcrumb" aria-label="breadcrumb"></nav>
+      </div>
+      <div class="header-right">
+        <button id="schedule-btn" class="icon-btn" title="edit my schedule">📅 schedule</button>
+        <span id="user-email" class="user-email"></span>
         <button id="sign-out-btn" class="text-btn">sign out</button>
       </div>
     </header>
 
     <main class="app-main">
-      <section class="courses-section">
+
+      <!-- ── view: dashboard (courses) ── -->
+      <div id="view-dashboard">
         <div class="section-header">
           <h2>your courses</h2>
           <button id="add-course-btn" class="primary-btn">+ add course</button>
         </div>
-
-        <!-- courses get rendered here as cards -->
         <div id="courses-list" class="courses-list">
-          <!-- empty state shows when there are no courses yet -->
-          <p id="empty-state" class="empty-state">
-            no courses yet. add one to get started 💛
-          </p>
+          <p id="courses-empty" class="empty-state">no courses yet. add one to get started 💛</p>
         </div>
-      </section>
+      </div>
+
+      <!-- ── view: course detail (assignments list) ── -->
+      <div id="view-course" class="hidden">
+        <div class="section-header">
+          <h2 id="course-title">course</h2>
+          <button id="add-assignment-btn" class="primary-btn">+ add assignment</button>
+        </div>
+        <div id="assignments-list" class="assignments-list">
+          <p id="assignments-empty" class="empty-state">no assignments yet. add one to get started 💛</p>
+        </div>
+      </div>
+
+      <!-- ── view: assignment detail (split) ── -->
+      <div id="view-assignment" class="hidden">
+
+        <div class="assignment-header">
+          <div class="assignment-meta">
+            <h2 id="assignment-title">assignment</h2>
+            <span id="assignment-due" class="due-badge"></span>
+          </div>
+          <div class="assignment-actions">
+            <button id="upload-pdf-btn" class="secondary-btn">📄 upload pdf</button>
+            <button id="auto-schedule-btn" class="secondary-btn">🗓 auto-schedule tasks</button>
+          </div>
+        </div>
+
+        <!-- time estimate banner -->
+        <div id="estimate-banner" class="estimate-banner hidden">
+          <span id="estimate-text"></span>
+          <div class="progress-track">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <!-- hidden file input, triggered by upload-pdf-btn -->
+        <input type="file" id="pdf-file-input" accept="application/pdf" class="hidden" />
+
+        <!-- processing spinner (shown while claude is working) -->
+        <div id="pdf-spinner" class="spinner-overlay hidden">
+          <div class="spinner-box">
+            <div class="spinner"></div>
+            <p>analysing your assignment…</p>
+          </div>
+        </div>
+
+        <div class="split-view">
+          <!-- left: assignment text / upload prompt -->
+          <div class="split-left" id="assignment-text-panel">
+            <div id="assignment-text-empty" class="upload-prompt">
+              <p>upload your assignment PDF and margin will break it into tasks for you.</p>
+              <button class="primary-btn" id="upload-prompt-btn">📄 upload pdf</button>
+            </div>
+            <div id="assignment-text-content" class="assignment-text hidden"></div>
+          </div>
+
+          <!-- right: task list -->
+          <div class="split-right">
+            <div class="tasks-header">
+              <h3>tasks</h3>
+              <button id="add-task-btn" class="text-btn small">+ add manually</button>
+            </div>
+            <div id="task-list" class="task-list">
+              <p id="tasks-empty" class="empty-state small">no tasks yet — upload a pdf or add manually.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <!-- end view-assignment -->
+
     </main>
   </div>
+  <!-- end signed-in-view -->
 
-  <!-- modal for creating a new course. hidden until user clicks "add course" -->
-  <div id="course-modal" class="modal hidden">
+
+  <!-- ════════════════ modals ════════════════ -->
+
+  <!-- add course -->
+  <div id="course-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
       <h3>add a course</h3>
       <label>
@@ -68,11 +141,62 @@
     </div>
   </div>
 
-  <!--
-    firebase web SDK — loaded as ES modules from google's CDN.
-    we're using v10's modular API (smaller bundle than the old compat one).
-    our app code lives in app.js as a module.
-  -->
+  <!-- add assignment -->
+  <div id="assignment-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <h3>add an assignment</h3>
+      <label>
+        assignment title
+        <input type="text" id="assignment-title-input" placeholder="e.g. Problem Set 3" />
+      </label>
+      <label>
+        due date
+        <input type="date" id="assignment-due-input" />
+      </label>
+      <div class="modal-actions">
+        <button id="cancel-assignment-btn" class="text-btn">cancel</button>
+        <button id="save-assignment-btn" class="primary-btn">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- add task manually -->
+  <div id="task-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content">
+      <h3>add a task</h3>
+      <label>
+        task description
+        <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" />
+      </label>
+      <label>
+        estimated time (minutes)
+        <input type="number" id="task-minutes-input" min="1" placeholder="30" />
+      </label>
+      <div class="modal-actions">
+        <button id="cancel-task-btn" class="text-btn">cancel</button>
+        <button id="save-task-btn" class="primary-btn">save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- schedule editor -->
+  <div id="schedule-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-content wide">
+      <h3>my weekly schedule</h3>
+      <p class="modal-hint">add your classes, work shifts, and other recurring commitments so margin can find your free time.</p>
+
+      <div id="schedule-blocks-list" class="schedule-blocks-list"></div>
+
+      <button id="add-block-btn" class="text-btn">+ add commitment</button>
+
+      <div class="modal-actions">
+        <button id="cancel-schedule-btn" class="text-btn">cancel</button>
+        <button id="save-schedule-btn" class="primary-btn">save schedule</button>
+      </div>
+    </div>
+  </div>
+
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

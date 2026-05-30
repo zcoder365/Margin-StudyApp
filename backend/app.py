@@ -339,68 +339,20 @@ def upload_assignment_pdf(project_id):
 
     pdf_file = request.files["pdf"]
     pdf_bytes = pdf_file.read()
-    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
 
-    # ask claude to extract text and break the assignment into tasks
+    # extract text with pypdf — no AI needed for now
+    import io
+    from pypdf import PdfReader
+
     try:
-        response = anthropic_client.messages.create(
-            model="claude-opus-4-8",
-            max_tokens=4096,
-            messages=[{
-                "role": "user",
-                "content": [
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_b64,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": (
-                            "You are a study assistant helping a student break down an assignment into manageable tasks.\n\n"
-                            "Analyze this assignment PDF and return ONLY a JSON object with this exact structure "
-                            "(no markdown, no explanation, just the raw JSON):\n\n"
-                            "{\n"
-                            '  "extractedText": "the full readable text of the assignment",\n'
-                            '  "tasks": [\n'
-                            '    {"title": "concise task description", "estimatedMinutes": 20},\n'
-                            '    ...\n'
-                            '  ],\n'
-                            '  "totalEstimatedMinutes": 90\n'
-                            "}\n\n"
-                            "Guidelines for tasks:\n"
-                            "- For problem sets: each question or subpart is its own task\n"
-                            "- For essays: outline, draft intro, draft body sections, draft conclusion, revise, proofread\n"
-                            "- For reading assignments: each chapter or major section is a task\n"
-                            "- Keep task titles short and action-oriented (e.g. 'Complete problem 3a-3c')\n"
-                            "- estimatedMinutes should reflect realistic effort for a typical college student\n"
-                            "- totalEstimatedMinutes is the sum of all task estimates"
-                        ),
-                    },
-                ],
-            }],
-        )
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        extracted_text = "\n\n".join(pages).strip()
     except Exception as e:
-        return jsonify({"error": f"claude api error: {str(e)}"}), 500
+        return jsonify({"error": f"could not read pdf: {str(e)}"}), 500
 
-    response_text = response.content[0].text.strip()
-
-    # extract JSON — claude should return only JSON but strip any accidental markdown fences
-    json_match = re.search(r'\{[\s\S]*\}', response_text)
-    if not json_match:
-        return jsonify({"error": "could not parse claude response as JSON"}), 500
-
-    try:
-        result = json.loads(json_match.group())
-    except json.JSONDecodeError as e:
-        return jsonify({"error": f"invalid JSON from claude: {str(e)}"}), 500
-
-    extracted_text = result.get("extractedText", "")
-    total_estimated = result.get("totalEstimatedMinutes", 0)
-    raw_tasks = result.get("tasks", [])
+    total_estimated = 0
+    raw_tasks = []  # user adds tasks manually for now
 
     # delete any existing ai-generated tasks for this project before adding new ones
     existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).where("aiGenerated", "==", True).stream()

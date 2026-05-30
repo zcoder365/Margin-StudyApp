@@ -2,4 +2,4 @@
 __pycache__/
 *.db
 venv/
-secretAppKey.json
+firebase-key.json

@@ -205,6 +205,48 @@ def create_term():
     return jsonify({"id": term_ref.id, "name": name}), 201
 
 
+@app.route("/api/terms/<term_id>", methods=["PATCH"])
+@require_auth
+def update_term(term_id):
+    body = request.get_json(silent=True) or {}
+    name = body.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+
+    term_ref = user_doc(g.user_id).collection("terms").document(term_id)
+    if not term_ref.get().exists:
+        return jsonify({"error": "term not found"}), 404
+
+    term_ref.update({"name": name})
+    return jsonify({"id": term_id, "name": name})
+
+
+@app.route("/api/terms/<term_id>", methods=["DELETE"])
+@require_auth
+def delete_term(term_id):
+    uid = g.user_id
+
+    # cascade: delete all tasks, projects, and courses belonging to this term
+    courses = list(user_doc(uid).collection("courses").where("termId", "==", term_id).stream())
+    for course_doc in courses:
+        cid = course_doc.id
+        projects = list(user_doc(uid).collection("projects").where("courseId", "==", cid).stream())
+        for project_doc in projects:
+            for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
+                task_doc.reference.delete()
+            project_doc.reference.delete()
+        course_doc.reference.delete()
+
+    user_doc(uid).collection("terms").document(term_id).delete()
+
+    # if this was the current term, clear currentTermId
+    user_snap = user_doc(uid).get()
+    if user_snap.exists and user_snap.to_dict().get("currentTermId") == term_id:
+        user_doc(uid).update({"currentTermId": None})
+
+    return jsonify({"deleted": term_id})
+
+
 # -----------------------------------------------------------------------------
 # courses
 # -----------------------------------------------------------------------------
@@ -252,6 +294,40 @@ def create_course():
     })
 
     return jsonify({"id": course_ref.id, "name": name, "color": color, "termId": term_id}), 201
+
+
+@app.route("/api/courses/<course_id>", methods=["PATCH"])
+@require_auth
+def update_course(course_id):
+    body = request.get_json(silent=True) or {}
+    course_ref = user_doc(g.user_id).collection("courses").document(course_id)
+    if not course_ref.get().exists:
+        return jsonify({"error": "course not found"}), 404
+
+    updates = {}
+    if "name" in body:
+        updates["name"] = body["name"].strip()
+    if "color" in body:
+        updates["color"] = body["color"]
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+
+    course_ref.update(updates)
+    return jsonify({"id": course_id, **updates})
+
+
+@app.route("/api/courses/<course_id>", methods=["DELETE"])
+@require_auth
+def delete_course(course_id):
+    uid = g.user_id
+    projects = list(user_doc(uid).collection("projects").where("courseId", "==", course_id).stream())
+    for project_doc in projects:
+        for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
+            task_doc.reference.delete()
+        project_doc.reference.delete()
+
+    user_doc(uid).collection("courses").document(course_id).delete()
+    return jsonify({"deleted": course_id})
 
 
 # -----------------------------------------------------------------------------
@@ -319,6 +395,42 @@ def create_project():
         "extractedText": None,
         "totalEstimatedMinutes": None,
     }), 201
+
+
+@app.route("/api/projects/<project_id>", methods=["PATCH"])
+@require_auth
+def update_project(project_id):
+    body = request.get_json(silent=True) or {}
+    project_ref = user_doc(g.user_id).collection("projects").document(project_id)
+    if not project_ref.get().exists:
+        return jsonify({"error": "project not found"}), 404
+
+    updates = {}
+    if "title" in body:
+        updates["title"] = body["title"].strip()
+    if "dueDate" in body:
+        try:
+            updates["dueDate"] = datetime.fromisoformat(body["dueDate"]) if body["dueDate"] else None
+        except ValueError:
+            return jsonify({"error": "dueDate must be ISO format"}), 400
+    if not updates:
+        return jsonify({"error": "nothing to update"}), 400
+
+    project_ref.update(updates)
+    fresh = project_ref.get().to_dict()
+    fresh["id"] = project_id
+    serialize_timestamps(fresh, ["dueDate", "createdAt"])
+    return jsonify(fresh)
+
+
+@app.route("/api/projects/<project_id>", methods=["DELETE"])
+@require_auth
+def delete_project(project_id):
+    uid = g.user_id
+    for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream():
+        task_doc.reference.delete()
+    user_doc(uid).collection("projects").document(project_id).delete()
+    return jsonify({"deleted": project_id})
 
 
 # -----------------------------------------------------------------------------

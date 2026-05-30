@@ -83,6 +83,8 @@ const signInBtn       = document.getElementById("sign-in-btn");
 const signOutBtn      = document.getElementById("sign-out-btn");
 const breadcrumb      = document.getElementById("breadcrumb");
 const termSelect      = document.getElementById("term-select");
+const editTermBtn     = document.getElementById("edit-term-btn");
+const deleteTermBtn   = document.getElementById("delete-term-btn");
 const newTermBtn      = document.getElementById("new-term-btn");
 const scheduleBtn     = document.getElementById("schedule-btn");
 
@@ -291,12 +293,43 @@ newTermBtn.addEventListener("click", async () => {
       body: JSON.stringify({ name: name.trim(), setAsCurrent: true }),
     });
     await loadTerms();
-    // select the new term
     termSelect.value = term.id;
     showView("dashboard");
     await loadCourses(term.id);
   } catch (err) {
     alert(`couldn't create term: ${err.message}`);
+  }
+});
+
+editTermBtn.addEventListener("click", async () => {
+  const termId = termSelect.value;
+  if (!termId) return;
+  const current = termSelect.options[termSelect.selectedIndex]?.text || "";
+  const name = prompt("rename term:", current);
+  if (!name || !name.trim() || name.trim() === current) return;
+  try {
+    await api(`/terms/${termId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: name.trim() }),
+    });
+    await loadTerms();
+    termSelect.value = termId;
+  } catch (err) {
+    alert(`couldn't rename: ${err.message}`);
+  }
+});
+
+deleteTermBtn.addEventListener("click", async () => {
+  const termId = termSelect.value;
+  if (!termId) return;
+  const name = termSelect.options[termSelect.selectedIndex]?.text || "this term";
+  if (!confirm(`Delete "${name}" and all its courses and assignments? This can't be undone.`)) return;
+  try {
+    await api(`/terms/${termId}`, { method: "DELETE" });
+    await loadTerms();
+    await loadCourses();
+  } catch (err) {
+    alert(`couldn't delete: ${err.message}`);
   }
 });
 
@@ -333,6 +366,25 @@ function renderCourses(courses) {
     heading.textContent = course.name;
     card.appendChild(heading);
 
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "card-action-btn";
+    editBtn.textContent = "✏️";
+    editBtn.title = "edit";
+    editBtn.addEventListener("click", (e) => { e.stopPropagation(); editCourse(course); });
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "card-action-btn delete";
+    delBtn.textContent = "🗑";
+    delBtn.title = "delete";
+    delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteCourse(course); });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    card.appendChild(actions);
+
     card.addEventListener("click", () => openCourse(course));
     coursesList.appendChild(card);
   }
@@ -345,14 +397,19 @@ async function openCourse(course) {
   await loadAssignments(course.id);
 }
 
-// add course modal
-addCourseBtn.addEventListener("click", () => {
-  courseNameInput.value = "";
-  courseColorInput.value = "#a8d5ba";
+// add / edit course modal
+let editingCourseId = null;
+
+function openCourseModal(course = null) {
+  editingCourseId = course ? course.id : null;
+  courseNameInput.value = course ? course.name : "";
+  courseColorInput.value = course ? course.color : "#a8d5ba";
+  courseModal.querySelector("h3").textContent = course ? "edit course" : "add a course";
   courseModal.classList.remove("hidden");
   courseNameInput.focus();
-});
+}
 
+addCourseBtn.addEventListener("click", () => openCourseModal());
 cancelCourseBtn.addEventListener("click", () => courseModal.classList.add("hidden"));
 
 saveCourseBtn.addEventListener("click", async () => {
@@ -360,20 +417,42 @@ saveCourseBtn.addEventListener("click", async () => {
   if (!name) { alert("give your course a name 💛"); return; }
   saveCourseBtn.disabled = true;
   try {
-    await api("/courses", {
-      method: "POST",
-      body: JSON.stringify({ name, color: courseColorInput.value }),
-    });
+    if (editingCourseId) {
+      await api(`/courses/${editingCourseId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name, color: courseColorInput.value }),
+      });
+    } else {
+      await api("/courses", {
+        method: "POST",
+        body: JSON.stringify({ name, color: courseColorInput.value }),
+      });
+    }
     courseModal.classList.add("hidden");
-    await loadCourses();
+    await loadCourses(termSelect.value || undefined);
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
   } finally {
     saveCourseBtn.disabled = false;
+    editingCourseId = null;
   }
 });
 
 courseNameInput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveCourseBtn.click(); });
+
+async function editCourse(course) {
+  openCourseModal(course);
+}
+
+async function deleteCourse(course) {
+  if (!confirm(`Delete "${course.name}" and all its assignments? This can't be undone.`)) return;
+  try {
+    await api(`/courses/${course.id}`, { method: "DELETE" });
+    await loadCourses(termSelect.value || undefined);
+  } catch (err) {
+    alert(`couldn't delete: ${err.message}`);
+  }
+}
 
 
 // ---------------------------------------------------------------------------
@@ -431,6 +510,25 @@ function renderAssignments(projects) {
     }
     body.appendChild(meta);
     card.appendChild(body);
+
+    const actions = document.createElement("div");
+    actions.className = "card-actions";
+
+    const editBtn = document.createElement("button");
+    editBtn.className = "card-action-btn";
+    editBtn.textContent = "✏️";
+    editBtn.title = "edit";
+    editBtn.addEventListener("click", (e) => { e.stopPropagation(); openAssignmentModal(project); });
+
+    const delBtn = document.createElement("button");
+    delBtn.className = "card-action-btn delete";
+    delBtn.textContent = "🗑";
+    delBtn.title = "delete";
+    delBtn.addEventListener("click", (e) => { e.stopPropagation(); deleteAssignment(project); });
+
+    actions.appendChild(editBtn);
+    actions.appendChild(delBtn);
+    card.appendChild(actions);
 
     card.addEventListener("click", () => openAssignment(project));
     assignmentsList.appendChild(card);
@@ -504,14 +602,19 @@ function renderEstimateBanner(tasks, project) {
   estimateBanner.classList.remove("hidden");
 }
 
-// add assignment modal
-addAssignmentBtn.addEventListener("click", () => {
-  assignmentTitleInput.value = "";
-  assignmentDueInput.value = "";
+// add / edit assignment modal
+let editingProjectId = null;
+
+function openAssignmentModal(project = null) {
+  editingProjectId = project ? project.id : null;
+  assignmentTitleInput.value = project ? project.title : "";
+  assignmentDueInput.value = project?.dueDate ? project.dueDate.slice(0, 10) : "";
+  assignmentModal.querySelector("h3").textContent = project ? "edit assignment" : "add an assignment";
   assignmentModal.classList.remove("hidden");
   assignmentTitleInput.focus();
-});
+}
 
+addAssignmentBtn.addEventListener("click", () => openAssignmentModal());
 cancelAssignmentBtn.addEventListener("click", () => assignmentModal.classList.add("hidden"));
 
 saveAssignmentBtn.addEventListener("click", async () => {
@@ -521,24 +624,42 @@ saveAssignmentBtn.addEventListener("click", async () => {
 
   saveAssignmentBtn.disabled = true;
   try {
-    await api("/projects", {
-      method: "POST",
-      body: JSON.stringify({
-        courseId: state.currentCourse.id,
-        title,
-        dueDate: assignmentDueInput.value || null,
-      }),
-    });
+    if (editingProjectId) {
+      await api(`/projects/${editingProjectId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ title, dueDate: assignmentDueInput.value || null }),
+      });
+    } else {
+      await api("/projects", {
+        method: "POST",
+        body: JSON.stringify({
+          courseId: state.currentCourse.id,
+          title,
+          dueDate: assignmentDueInput.value || null,
+        }),
+      });
+    }
     assignmentModal.classList.add("hidden");
     await loadAssignments(state.currentCourse.id);
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
   } finally {
     saveAssignmentBtn.disabled = false;
+    editingProjectId = null;
   }
 });
 
 assignmentTitleInput.addEventListener("keydown", (e) => { if (e.key === "Enter") saveAssignmentBtn.click(); });
+
+async function deleteAssignment(project) {
+  if (!confirm(`Delete "${project.title}" and all its tasks? This can't be undone.`)) return;
+  try {
+    await api(`/projects/${project.id}`, { method: "DELETE" });
+    await loadAssignments(state.currentCourse.id);
+  } catch (err) {
+    alert(`couldn't delete: ${err.message}`);
+  }
+}
 
 
 // ---------------------------------------------------------------------------

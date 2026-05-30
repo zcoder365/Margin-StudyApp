@@ -240,6 +240,33 @@ body {
 
 .course-card h3 { font-size: 1.05rem; font-weight: 600; }
 
+.course-card .card-actions,
+.assignment-card .card-actions {
+  display: none;
+  gap: 0.3rem;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.course-card:hover .card-actions,
+.assignment-card:hover .card-actions {
+  display: flex;
+}
+
+.card-action-btn {
+  background: none;
+  border: 1px solid #e0ddd8;
+  border-radius: 6px;
+  padding: 0.2rem 0.45rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: #888;
+  line-height: 1;
+}
+
+.card-action-btn:hover { background: #f5f4f2; color: #2a2a2a; }
+.card-action-btn.delete:hover { background: #fde8e8; color: #c0392b; border-color: #f5c6c6; }
+
 .course-card .course-meta {
   font-size: 0.8rem;
   color: #888;

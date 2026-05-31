@@ -124,6 +124,7 @@ def me():
         "displayName": data.get("displayName", ""),
         "weekStartDay": data.get("weekStartDay", 1),
         "workIntervalMinutes": data.get("workIntervalMinutes", 25),
+        "darkMode": data.get("darkMode", False),
     })
 
 
@@ -136,6 +137,8 @@ def update_me():
         updates["displayName"] = body["displayName"].strip()
     if "weekStartDay" in body and body["weekStartDay"] in (0, 1):
         updates["weekStartDay"] = body["weekStartDay"]
+    if "darkMode" in body:
+        updates["darkMode"] = bool(body["darkMode"])
     if "workIntervalMinutes" in body:
         val = body["workIntervalMinutes"]
         if isinstance(val, int) and 1 <= val <= 120:

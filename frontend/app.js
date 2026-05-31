@@ -75,6 +75,7 @@ let state = {
   tasks: [],                  // tasks for currentProject
   weekStartDay: 1,            // 1=Mon (default), 0=Sun
   workIntervalMinutes: 25,    // study session length
+  darkMode: false,
 };
 
 
@@ -334,6 +335,8 @@ onAuthStateChanged(auth, async (user) => {
       const meData = await api("/me");
       state.weekStartDay = meData.weekStartDay ?? 1;
       state.workIntervalMinutes = meData.workIntervalMinutes ?? 25;
+      state.darkMode = meData.darkMode ?? false;
+      applyTheme(state.darkMode);
       calWeekStart = getWeekStart(new Date());
 
       showView("home");
@@ -1687,6 +1690,7 @@ const saveProfileBtn   = document.getElementById("save-profile-btn");
 const profileSaveMsg   = document.getElementById("profile-save-msg");
 const resetPwBtn       = document.getElementById("reset-pw-btn");
 const resetPwMsg       = document.getElementById("reset-pw-msg");
+const darkModeToggle   = document.getElementById("dark-mode-toggle");
 const weekStartSelect  = document.getElementById("week-start-select");
 const workIntervalInput = document.getElementById("work-interval-input");
 const savePrefsBtn     = document.getElementById("save-prefs-btn");
@@ -1699,6 +1703,7 @@ profilePageBtn.addEventListener("click", async () => {
     const data = await api("/me");
     profileNameInput.value = data.displayName || "";
     profileEmailDisp.value = data.email || "";
+    darkModeToggle.checked = data.darkMode ?? false;
     weekStartSelect.value = String(data.weekStartDay ?? 1);
     workIntervalInput.value = data.workIntervalMinutes ?? 25;
   } catch (err) {
@@ -1723,13 +1728,22 @@ saveProfileBtn.addEventListener("click", async () => {
   }
 });
 
+// toggle dark mode instantly without waiting for save
+darkModeToggle.addEventListener("change", () => applyTheme(darkModeToggle.checked));
+
+function applyTheme(dark) {
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+}
+
 savePrefsBtn.addEventListener("click", async () => {
+  const darkMode = darkModeToggle.checked;
   const weekStartDay = parseInt(weekStartSelect.value);
   const workIntervalMinutes = parseInt(workIntervalInput.value) || 25;
   savePrefsBtn.disabled = true;
   prefsSaveMsg.classList.add("hidden");
   try {
-    await api("/me", { method: "PATCH", body: JSON.stringify({ weekStartDay, workIntervalMinutes }) });
+    await api("/me", { method: "PATCH", body: JSON.stringify({ darkMode, weekStartDay, workIntervalMinutes }) });
+    state.darkMode = darkMode;
     state.weekStartDay = weekStartDay;
     state.workIntervalMinutes = workIntervalMinutes;
     calWeekStart = getWeekStart(new Date());

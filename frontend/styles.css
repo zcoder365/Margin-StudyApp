@@ -1123,6 +1123,133 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 
+/* ── calendar ── */
+.cal-controls { display: flex; gap: 0.4rem; }
+
+.cal-week-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-bottom: 1rem;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.5rem;
+}
+
+.cal-day {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.cal-day.today {
+  border-color: var(--accent);
+}
+
+.cal-day-header {
+  padding: 0.5rem 0.5rem 0.4rem;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.cal-day-name {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.cal-day.today .cal-day-name { color: var(--accent); }
+
+.cal-day-num {
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text-1);
+}
+
+.cal-day.today .cal-day-num {
+  background: var(--accent);
+  color: #fff;
+}
+
+.cal-tasks {
+  padding: 0.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.cal-empty {
+  color: var(--text-3);
+  font-size: 0.75rem;
+  text-align: center;
+  padding: 1rem 0.5rem;
+}
+
+.cal-task-pill {
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  line-height: 1.35;
+  border: 1px solid var(--border-soft);
+  background: var(--bg);
+  box-shadow: inset 3px 0 0 var(--task-color, var(--border));
+  cursor: default;
+  transition: background var(--transition);
+}
+
+.cal-task-pill:hover { background: #f0ede8; }
+.cal-task-pill.done { opacity: 0.4; }
+.cal-task-pill.done .cal-task-title { text-decoration: line-through; }
+
+.cal-task-course {
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-task-title {
+  color: var(--text-1);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.cal-task-est {
+  font-size: 0.62rem;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+
+
 /* ── mobile ── */
 @media (max-width: 700px) {
   .app-header { padding: 0 1rem; }
@@ -1144,4 +1271,6 @@ body {
   .grade-summary-top { flex-direction: column; gap: 1rem; }
   .target-section { align-items: flex-start; }
   .target-result { text-align: left; }
+
+  .cal-grid { grid-template-columns: repeat(7, minmax(120px, 1fr)); overflow-x: auto; }
 }

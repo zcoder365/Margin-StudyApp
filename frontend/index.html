@@ -49,6 +49,9 @@
           </div>
         </div>
 
+        <!-- calendar -->
+        <button id="calendar-btn" class="btn btn-ghost" title="task calendar">Calendar</button>
+
         <!-- schedule -->
         <button id="schedule-btn" class="btn btn-ghost" title="my weekly schedule">Schedule</button>
 
@@ -79,6 +82,20 @@
         <div id="terms-grid" class="terms-grid">
           <p id="terms-empty" class="empty-state">No terms yet. Add one to get started 💛</p>
         </div>
+      </div>
+
+      <!-- ── calendar ── -->
+      <div id="view-calendar" class="hidden">
+        <div class="section-header">
+          <h2 id="cal-heading">Calendar</h2>
+          <div class="cal-controls">
+            <button id="cal-prev-btn" class="btn btn-ghost btn-sm">‹ Prev</button>
+            <button id="cal-today-btn" class="btn btn-ghost btn-sm">Today</button>
+            <button id="cal-next-btn" class="btn btn-ghost btn-sm">Next ›</button>
+          </div>
+        </div>
+        <div id="cal-week-label" class="cal-week-label"></div>
+        <div id="cal-grid" class="cal-grid"></div>
       </div>
 
       <!-- ── profile ── -->

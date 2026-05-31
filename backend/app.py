@@ -935,6 +935,48 @@ def auto_schedule(project_id):
 
 
 # -----------------------------------------------------------------------------
+# calendar
+# -----------------------------------------------------------------------------
+@app.route("/api/calendar", methods=["GET"])
+@require_auth
+def get_calendar():
+    uid = g.user_id
+    term_id = request.args.get("termId")
+    if not term_id:
+        user_snap = user_doc(uid).get()
+        term_id = user_snap.to_dict().get("currentTermId") if user_snap.exists else None
+    if not term_id:
+        return jsonify({"tasks": []})
+
+    # courses for this term
+    courses = {}
+    for doc in user_doc(uid).collection("courses").where("termId", "==", term_id).stream():
+        courses[doc.id] = {**doc.to_dict(), "id": doc.id}
+
+    # projects for those courses
+    projects = {}
+    for course_id in courses:
+        for doc in user_doc(uid).collection("projects").where("courseId", "==", course_id).stream():
+            projects[doc.id] = {**doc.to_dict(), "id": doc.id, "courseId": course_id}
+
+    # tasks for those projects, enriched with course data
+    result = []
+    for project_id, project in projects.items():
+        course = courses[project["courseId"]]
+        for doc in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream():
+            t = doc.to_dict()
+            t["id"] = doc.id
+            t["courseId"] = project["courseId"]
+            t["courseName"] = course.get("name", "")
+            t["courseColor"] = course.get("color", "#ccc")
+            t["projectTitle"] = project.get("title", "")
+            serialize_timestamps(t, ["createdAt"])
+            result.append(t)
+
+    return jsonify({"tasks": result})
+
+
+# -----------------------------------------------------------------------------
 # entry point
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":

@@ -196,7 +196,8 @@ const saveScheduleBtn    = document.getElementById("save-schedule-btn");
 const viewHome        = document.getElementById("view-home");
 const viewProfile     = document.getElementById("view-profile");
 const viewGrades      = document.getElementById("view-grades");
-const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile };
+const viewCalendar    = document.getElementById("view-calendar");
+const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -234,7 +235,8 @@ function renderBreadcrumb(view) {
   const goTerm = () => showView("dashboard");
 
   if (view === "home") return;
-  if (view === "profile") { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
+  if (view === "profile")  { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
+  if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("calendar")); return; }
 
   if (view === "dashboard") {
     breadcrumb.append(sep(), crumbLink("home", goHome));
@@ -513,8 +515,9 @@ termSelect.addEventListener("change", async () => {
   try {
     await api(`/terms/${termId}`, { method: "PATCH", body: JSON.stringify({ setAsCurrent: true }) });
     state.currentTermId = termId;
-    // update the home page badges if it's visible
+    // refresh other views if open
     if (!viewHome.classList.contains("hidden")) await loadHome();
+    if (!viewCalendar.classList.contains("hidden")) await loadCalendar();
   } catch (err) {
     console.error("failed to set current term:", err);
   }
@@ -1663,6 +1666,150 @@ function showMsg(el, text, type) {
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 5000);
 }
+
+// ---------------------------------------------------------------------------
+// calendar
+// ---------------------------------------------------------------------------
+const calendarBtn   = document.getElementById("calendar-btn");
+const calGrid       = document.getElementById("cal-grid");
+const calWeekLabel  = document.getElementById("cal-week-label");
+const calPrevBtn    = document.getElementById("cal-prev-btn");
+const calTodayBtn   = document.getElementById("cal-today-btn");
+const calNextBtn    = document.getElementById("cal-next-btn");
+
+const CAL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+let calWeekStart = getMondayOfWeek(new Date());
+let calTasks = [];
+
+calendarBtn.addEventListener("click", async () => {
+  showView("calendar");
+  renderBreadcrumb("calendar");
+  await loadCalendar();
+});
+
+async function loadCalendar() {
+  const termId = termSelect.value || state.currentTermId;
+  try {
+    const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
+    calTasks = data.tasks;
+    renderCalendar();
+  } catch (err) {
+    console.error("failed to load calendar:", err);
+  }
+}
+
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function renderCalendar() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const weekEnd = new Date(calWeekStart);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  const fmtOpts = { month: "long", day: "numeric" };
+  calWeekLabel.textContent =
+    `${calWeekStart.toLocaleDateString("en-US", fmtOpts)} – ` +
+    `${weekEnd.toLocaleDateString("en-US", { ...fmtOpts, year: "numeric" })}`;
+
+  calGrid.innerHTML = "";
+
+  for (let i = 0; i < 7; i++) {
+    const day = new Date(calWeekStart);
+    day.setDate(day.getDate() + i);
+    const dayStr = day.toISOString().slice(0, 10);
+    const isToday = day.getTime() === today.getTime();
+
+    const dayTasks = calTasks.filter(t => t.dueDate && t.dueDate.slice(0, 10) === dayStr);
+
+    const col = document.createElement("div");
+    col.className = `cal-day${isToday ? " today" : ""}`;
+
+    const header = document.createElement("div");
+    header.className = "cal-day-header";
+
+    const dayName = document.createElement("div");
+    dayName.className = "cal-day-name";
+    dayName.textContent = CAL_DAYS[i];
+
+    const dayNum = document.createElement("div");
+    dayNum.className = "cal-day-num";
+    dayNum.textContent = day.getDate();
+
+    header.appendChild(dayName);
+    header.appendChild(dayNum);
+    col.appendChild(header);
+
+    const tasksEl = document.createElement("div");
+    tasksEl.className = "cal-tasks";
+
+    if (dayTasks.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "cal-empty";
+      empty.textContent = "—";
+      tasksEl.appendChild(empty);
+    } else {
+      for (const task of dayTasks) {
+        tasksEl.appendChild(buildCalTaskPill(task));
+      }
+    }
+
+    col.appendChild(tasksEl);
+    calGrid.appendChild(col);
+  }
+}
+
+function buildCalTaskPill(task) {
+  const pill = document.createElement("div");
+  pill.className = `cal-task-pill${task.status === "done" ? " done" : ""}`;
+  pill.style.setProperty("--task-color", task.courseColor || "#ccc");
+
+  const course = document.createElement("div");
+  course.className = "cal-task-course";
+  course.textContent = task.courseName || "";
+
+  const title = document.createElement("div");
+  title.className = "cal-task-title";
+  title.textContent = task.title;
+
+  pill.appendChild(course);
+  pill.appendChild(title);
+
+  if (task.estimatedMinutes) {
+    const est = document.createElement("div");
+    est.className = "cal-task-est";
+    est.textContent = `~${formatMinutes(task.estimatedMinutes)}`;
+    pill.appendChild(est);
+  }
+
+  return pill;
+}
+
+calPrevBtn.addEventListener("click", () => {
+  calWeekStart = new Date(calWeekStart);
+  calWeekStart.setDate(calWeekStart.getDate() - 7);
+  renderCalendar();
+});
+
+calNextBtn.addEventListener("click", () => {
+  calWeekStart = new Date(calWeekStart);
+  calWeekStart.setDate(calWeekStart.getDate() + 7);
+  renderCalendar();
+});
+
+calTodayBtn.addEventListener("click", () => {
+  calWeekStart = getMondayOfWeek(new Date());
+  renderCalendar();
+});
+
 
 // ---------------------------------------------------------------------------
 // date helpers

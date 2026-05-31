@@ -2017,6 +2017,22 @@ function renderCalendar() {
 
     const col = document.createElement("div");
     col.className = `cal-day${isToday ? " today" : ""}`;
+    col.dataset.date = dayStr;
+
+    col.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      col.classList.add("drag-over");
+    });
+    col.addEventListener("dragleave", (e) => {
+      if (!col.contains(e.relatedTarget)) col.classList.remove("drag-over");
+    });
+    col.addEventListener("drop", (e) => {
+      e.preventDefault();
+      col.classList.remove("drag-over");
+      const taskId = e.dataTransfer.getData("text/plain");
+      const newDate = col.dataset.date;
+      if (taskId && newDate) rescheduleTask(taskId, newDate);
+    });
 
     const header = document.createElement("div");
     header.className = "cal-day-header";
@@ -2056,6 +2072,15 @@ function buildCalTaskPill(task) {
   const pill = document.createElement("div");
   pill.className = `cal-task-pill${task.status === "done" ? " done" : ""}`;
   pill.style.setProperty("--task-color", task.courseColor || "#ccc");
+  pill.draggable = true;
+  pill.dataset.taskId = task.id;
+
+  pill.addEventListener("dragstart", (e) => {
+    e.dataTransfer.setData("text/plain", task.id);
+    e.dataTransfer.effectAllowed = "move";
+    setTimeout(() => pill.classList.add("dragging"), 0);
+  });
+  pill.addEventListener("dragend", () => pill.classList.remove("dragging"));
 
   const course = document.createElement("div");
   course.className = "cal-task-course";
@@ -2076,6 +2101,25 @@ function buildCalTaskPill(task) {
   }
 
   return pill;
+}
+
+async function rescheduleTask(taskId, newDate) {
+  // optimistic update
+  const task = calTasks.find(t => t.id === taskId);
+  if (!task || task.dueDate?.slice(0, 10) === newDate) return;
+  task.dueDate = newDate;
+  renderCalendar();
+
+  try {
+    await api(`/tasks/${taskId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ dueDate: newDate }),
+    });
+  } catch (err) {
+    console.error("failed to reschedule task:", err);
+    // revert by reloading
+    await loadCalendar();
+  }
 }
 
 calPrevBtn.addEventListener("click", () => {

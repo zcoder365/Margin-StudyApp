@@ -1537,6 +1537,15 @@ body {
   flex: 1;
 }
 
+.cal-day.drag-over {
+  background: var(--border-soft);
+  border-color: var(--text-3);
+}
+
+.cal-task-pill[draggable="true"] { cursor: grab; }
+.cal-task-pill[draggable="true"]:active { cursor: grabbing; }
+.cal-task-pill.dragging { opacity: 0.35; }
+
 .cal-empty {
   color: var(--text-3);
   font-size: 0.75rem;

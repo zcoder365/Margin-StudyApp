@@ -122,7 +122,8 @@ def me():
         "userId": g.user_id,
         "email": g.user_email,
         "displayName": data.get("displayName", ""),
-        "weekStartDay": data.get("weekStartDay", 1),  # 1=Mon, 0=Sun
+        "weekStartDay": data.get("weekStartDay", 1),
+        "workIntervalMinutes": data.get("workIntervalMinutes", 25),
     })
 
 
@@ -135,6 +136,10 @@ def update_me():
         updates["displayName"] = body["displayName"].strip()
     if "weekStartDay" in body and body["weekStartDay"] in (0, 1):
         updates["weekStartDay"] = body["weekStartDay"]
+    if "workIntervalMinutes" in body:
+        val = body["workIntervalMinutes"]
+        if isinstance(val, int) and 1 <= val <= 120:
+            updates["workIntervalMinutes"] = val
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
     user_doc(g.user_id).update(updates)

@@ -68,12 +68,13 @@ async function api(path, options = {}) {
 // app state
 // ---------------------------------------------------------------------------
 let state = {
-  currentTerm: null,     // { id, name }
-  currentTermId: null,   // backend-stored "active" term id
-  currentCourse: null,   // { id, name, color }
-  currentProject: null,  // { id, title, dueDate, extractedText, totalEstimatedMinutes }
-  tasks: [],             // tasks for currentProject
-  weekStartDay: 1,       // 1=Mon (default), 0=Sun
+  currentTerm: null,          // { id, name }
+  currentTermId: null,        // backend-stored "active" term id
+  currentCourse: null,        // { id, name, color }
+  currentProject: null,       // { id, title, dueDate, extractedText, totalEstimatedMinutes }
+  tasks: [],                  // tasks for currentProject
+  weekStartDay: 1,            // 1=Mon (default), 0=Sun
+  workIntervalMinutes: 25,    // study session length
 };
 
 
@@ -160,6 +161,7 @@ const pdfFileInput       = document.getElementById("pdf-file-input");
 const pdfSpinner         = document.getElementById("pdf-spinner");
 const textPanel          = document.getElementById("assignment-text-panel");
 const textEmpty          = document.getElementById("assignment-text-empty");
+const pdfFrame           = document.getElementById("pdf-frame");
 const textContent        = document.getElementById("assignment-text-content");
 const taskList           = document.getElementById("task-list");
 const tasksEmpty         = document.getElementById("tasks-empty");
@@ -331,6 +333,7 @@ onAuthStateChanged(auth, async (user) => {
       // load week start preference before showing anything
       const meData = await api("/me");
       state.weekStartDay = meData.weekStartDay ?? 1;
+      state.workIntervalMinutes = meData.workIntervalMinutes ?? 25;
       calWeekStart = getWeekStart(new Date());
 
       showView("home");
@@ -761,7 +764,7 @@ function renderAssignments(projects) {
 }
 
 async function openAssignment(project) {
-  state.currentProject = project;
+  state.currentProject = { ...project, pdfUrl: null };
   state.tasks = [];
   showView("assignment");
   viewAssignment.style.setProperty("--course-color", state.currentCourse?.color || "#ccc");
@@ -793,11 +796,18 @@ function renderAssignmentHeader(project) {
 }
 
 function renderAssignmentText(project) {
-  if (project.extractedText) {
+  if (project.pdfUrl) {
     textEmpty.classList.add("hidden");
+    textContent.classList.add("hidden");
+    pdfFrame.src = project.pdfUrl;
+    pdfFrame.classList.remove("hidden");
+  } else if (project.extractedText) {
+    textEmpty.classList.add("hidden");
+    pdfFrame.classList.add("hidden");
     textContent.classList.remove("hidden");
     textContent.textContent = project.extractedText;
   } else {
+    pdfFrame.classList.add("hidden");
     textContent.classList.add("hidden");
     textEmpty.classList.remove("hidden");
   }
@@ -916,6 +926,7 @@ pdfFileInput.addEventListener("change", async () => {
     // update local state
     state.currentProject.extractedText = result.extractedText;
     state.currentProject.totalEstimatedMinutes = result.totalEstimatedMinutes;
+    state.currentProject.pdfUrl = URL.createObjectURL(file);
     state.tasks = result.tasks;
 
     renderAssignmentText(state.currentProject);
@@ -1025,6 +1036,16 @@ function buildTaskItem(task) {
   body.appendChild(tags);
 
   // time-spent row — always shown so users can log as they go
+  // timer start button
+  const timerBtn = document.createElement("button");
+  timerBtn.className = "task-timer-btn";
+  timerBtn.dataset.taskId = task.id;
+  timerBtn.title = "start study session";
+  timerBtn.textContent = (task.id === timer.taskId && timer.running) ? "⏸" : "▶";
+  if (task.id === timer.taskId && timer.running) timerBtn.classList.add("active");
+  timerBtn.addEventListener("click", () => startTimerForTask(task));
+  tags.appendChild(timerBtn);
+
   const timeRow = document.createElement("div");
   timeRow.className = "time-spent-row";
 
@@ -1667,6 +1688,7 @@ const profileSaveMsg   = document.getElementById("profile-save-msg");
 const resetPwBtn       = document.getElementById("reset-pw-btn");
 const resetPwMsg       = document.getElementById("reset-pw-msg");
 const weekStartSelect  = document.getElementById("week-start-select");
+const workIntervalInput = document.getElementById("work-interval-input");
 const savePrefsBtn     = document.getElementById("save-prefs-btn");
 const prefsSaveMsg     = document.getElementById("prefs-save-msg");
 
@@ -1678,6 +1700,7 @@ profilePageBtn.addEventListener("click", async () => {
     profileNameInput.value = data.displayName || "";
     profileEmailDisp.value = data.email || "";
     weekStartSelect.value = String(data.weekStartDay ?? 1);
+    workIntervalInput.value = data.workIntervalMinutes ?? 25;
   } catch (err) {
     console.error("failed to load profile:", err);
   }
@@ -1702,11 +1725,13 @@ saveProfileBtn.addEventListener("click", async () => {
 
 savePrefsBtn.addEventListener("click", async () => {
   const weekStartDay = parseInt(weekStartSelect.value);
+  const workIntervalMinutes = parseInt(workIntervalInput.value) || 25;
   savePrefsBtn.disabled = true;
   prefsSaveMsg.classList.add("hidden");
   try {
-    await api("/me", { method: "PATCH", body: JSON.stringify({ weekStartDay }) });
+    await api("/me", { method: "PATCH", body: JSON.stringify({ weekStartDay, workIntervalMinutes }) });
     state.weekStartDay = weekStartDay;
+    state.workIntervalMinutes = workIntervalMinutes;
     calWeekStart = getWeekStart(new Date());
     showMsg(prefsSaveMsg, "Preferences saved.", "success");
   } catch (err) {
@@ -2014,6 +2039,147 @@ calTodayBtn.addEventListener("click", () => {
   calWeekStart = getWeekStart(new Date());
   renderCalendar();
 });
+
+
+// ---------------------------------------------------------------------------
+// study session timer
+// ---------------------------------------------------------------------------
+const timerPanel      = document.getElementById("timer-panel");
+const timerTaskName   = document.getElementById("timer-task-name");
+const timerDisplay    = document.getElementById("timer-display");
+const timerProgressFill = document.getElementById("timer-progress-fill");
+const timerStartBtn   = document.getElementById("timer-start-btn");
+const timerResetBtn   = document.getElementById("timer-reset-btn");
+const timerCloseBtn   = document.getElementById("timer-close-btn");
+const timerDoneMsg    = document.getElementById("timer-done-msg");
+
+let timer = {
+  taskId: null,
+  taskTitle: "",
+  totalSeconds: 0,
+  remaining: 0,
+  running: false,
+  intervalId: null,
+};
+
+function startTimerForTask(task) {
+  // if a different task was running, stop it first
+  if (timer.intervalId) clearInterval(timer.intervalId);
+
+  timer.taskId    = task.id;
+  timer.taskTitle = task.title;
+  timer.totalSeconds = (state.workIntervalMinutes || 25) * 60;
+  timer.remaining    = timer.totalSeconds;
+  timer.running      = false;
+  timer.intervalId   = null;
+
+  timerDoneMsg.classList.add("hidden");
+  timerTaskName.textContent = task.title;
+  timerStartBtn.textContent = "Start";
+  timerPanel.classList.remove("hidden");
+  updateTimerDisplay();
+  updateTimerProgress();
+  refreshTimerButtons();
+}
+
+function updateTimerDisplay() {
+  const m = Math.floor(timer.remaining / 60);
+  const s = timer.remaining % 60;
+  timerDisplay.textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function updateTimerProgress() {
+  const pct = timer.totalSeconds > 0
+    ? ((timer.totalSeconds - timer.remaining) / timer.totalSeconds) * 100
+    : 0;
+  timerProgressFill.style.width = `${pct}%`;
+}
+
+function refreshTimerButtons() {
+  timerStartBtn.textContent = timer.running ? "Pause" : "Start";
+}
+
+function refreshTaskTimerBtns() {
+  document.querySelectorAll(".task-timer-btn").forEach(btn => {
+    const id = btn.dataset.taskId;
+    btn.textContent = (id === timer.taskId && timer.running) ? "⏸" : "▶";
+    btn.classList.toggle("active", id === timer.taskId && timer.running);
+  });
+}
+
+timerStartBtn.addEventListener("click", () => {
+  if (timer.running) {
+    // pause
+    clearInterval(timer.intervalId);
+    timer.intervalId = null;
+    timer.running = false;
+  } else {
+    // start / resume
+    timer.running = true;
+    timer.intervalId = setInterval(() => {
+      timer.remaining--;
+      updateTimerDisplay();
+      updateTimerProgress();
+      if (timer.remaining <= 0) {
+        clearInterval(timer.intervalId);
+        timer.intervalId = null;
+        timer.running = false;
+        onTimerComplete();
+      }
+    }, 1000);
+  }
+  refreshTimerButtons();
+  refreshTaskTimerBtns();
+});
+
+timerResetBtn.addEventListener("click", () => {
+  clearInterval(timer.intervalId);
+  timer.intervalId = null;
+  timer.running = false;
+  timer.remaining = timer.totalSeconds;
+  timerDoneMsg.classList.add("hidden");
+  updateTimerDisplay();
+  updateTimerProgress();
+  refreshTimerButtons();
+  refreshTaskTimerBtns();
+});
+
+timerCloseBtn.addEventListener("click", () => {
+  clearInterval(timer.intervalId);
+  timer.intervalId = null;
+  timer.running = false;
+  timer.taskId = null;
+  timerPanel.classList.add("hidden");
+  refreshTaskTimerBtns();
+});
+
+async function onTimerComplete() {
+  const elapsedMinutes = Math.round((timer.totalSeconds - timer.remaining) / 60);
+  timerStartBtn.textContent = "Start";
+  timerDoneMsg.classList.remove("hidden");
+  refreshTaskTimerBtns();
+
+  // auto-log time to the task
+  if (timer.taskId && elapsedMinutes > 0) {
+    try {
+      const task = state.tasks.find(t => t.id === timer.taskId);
+      const existing = task?.timeSpent || 0;
+      const updated = await api(`/tasks/${timer.taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ timeSpent: existing + elapsedMinutes }),
+      });
+      const idx = state.tasks.findIndex(t => t.id === timer.taskId);
+      if (idx !== -1) {
+        state.tasks[idx] = updated;
+        const el = taskList.querySelector(`[data-task-id="${timer.taskId}"]`);
+        if (el) el.replaceWith(buildTaskItem(updated));
+        renderEstimateBanner(state.tasks, state.currentProject);
+      }
+    } catch (err) {
+      console.error("failed to log timer time:", err);
+    }
+  }
+}
 
 
 // ---------------------------------------------------------------------------

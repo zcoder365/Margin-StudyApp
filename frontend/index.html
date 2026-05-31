@@ -139,6 +139,10 @@
                 <option value="0">Sunday</option>
               </select>
             </div>
+            <div class="profile-field">
+              <label>Study session length (min)</label>
+              <input type="number" id="work-interval-input" min="1" max="120" placeholder="25" />
+            </div>
             <button id="save-prefs-btn" class="btn btn-primary">Save preferences</button>
             <p id="prefs-save-msg" class="profile-msg hidden"></p>
           </div>
@@ -241,6 +245,7 @@
               <p>Upload your assignment PDF and margin will display it here.</p>
               <button class="btn btn-primary" id="upload-prompt-btn">Upload PDF</button>
             </div>
+            <iframe id="pdf-frame" class="pdf-frame hidden" title="Assignment PDF"></iframe>
             <div id="assignment-text-content" class="assignment-text hidden"></div>
           </div>
           <div class="split-right">
@@ -361,6 +366,24 @@
         <button id="save-schedule-btn" class="btn btn-primary">Save schedule</button>
       </div>
     </div>
+  </div>
+
+  <!-- ════ timer panel ════ -->
+  <div id="timer-panel" class="timer-panel hidden" role="complementary" aria-label="study timer">
+    <div class="timer-header">
+      <span class="timer-label">Study session</span>
+      <button id="timer-close-btn" class="timer-close" title="close timer">✕</button>
+    </div>
+    <div id="timer-task-name" class="timer-task-name"></div>
+    <div id="timer-display" class="timer-display">25:00</div>
+    <div class="timer-progress-track">
+      <div id="timer-progress-fill" class="timer-progress-fill"></div>
+    </div>
+    <div class="timer-controls">
+      <button id="timer-start-btn" class="btn btn-primary btn-sm">Start</button>
+      <button id="timer-reset-btn" class="btn btn-ghost btn-sm">Reset</button>
+    </div>
+    <div id="timer-done-msg" class="timer-done-msg hidden">session complete — time logged 💛</div>
   </div>
 
   <script type="module" src="app.js"></script>

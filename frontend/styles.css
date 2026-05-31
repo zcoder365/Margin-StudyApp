@@ -600,7 +600,7 @@ body {
 
 .progress-fill {
   height: 100%;
-  background: var(--accent);
+  background: var(--course-color, var(--accent));
   border-radius: 999px;
   transition: width 0.4s ease;
 }
@@ -674,6 +674,7 @@ body {
   padding: 0.7rem 1.25rem;
   border-bottom: 1px solid var(--border-soft);
   transition: background var(--transition);
+  box-shadow: inset 3px 0 0 var(--course-color, transparent);
 }
 .task-item:last-child { border-bottom: none; }
 .task-item:hover { background: #faf9f7; }

@@ -723,6 +723,7 @@ async function openAssignment(project) {
   state.currentProject = project;
   state.tasks = [];
   showView("assignment");
+  viewAssignment.style.setProperty("--course-color", state.currentCourse?.color || "#ccc");
   renderAssignmentHeader(project);
 
   // load tasks

@@ -638,6 +638,8 @@ function renderCourses(courses) {
 async function openCourse(course) {
   state.currentCourse = course;
   courseTitle.textContent = course.name;
+  // clear stale count from previous course
+  document.getElementById("course-completion-count")?.remove();
   showView("course");
   await loadAssignments(course.id);
 }
@@ -723,9 +725,20 @@ function renderAssignments(projects) {
 
   assignmentsEmpty.classList.add("hidden");
 
+  // completion count in course header
+  const completed = projects.filter(p => p.status === "completed").length;
+  let countEl = document.getElementById("course-completion-count");
+  if (!countEl) {
+    countEl = document.createElement("span");
+    countEl.id = "course-completion-count";
+    countEl.className = "course-completion";
+    courseTitle.parentElement.appendChild(countEl);
+  }
+  countEl.textContent = `${completed} / ${projects.length} done`;
+
   for (const project of projects) {
     const card = document.createElement("div");
-    card.className = "assignment-card";
+    card.className = `assignment-card${project.status === "completed" ? " completed" : ""}`;
 
     const colorBar = document.createElement("div");
     colorBar.className = "assignment-card-color";
@@ -735,17 +748,30 @@ function renderAssignments(projects) {
     const body = document.createElement("div");
     body.className = "assignment-card-body";
 
+    const titleRow = document.createElement("div");
+    titleRow.style.display = "flex";
+    titleRow.style.alignItems = "center";
+    titleRow.style.gap = "0.5rem";
+
     const title = document.createElement("div");
     title.className = "assignment-card-title";
     title.textContent = project.title;
-    body.appendChild(title);
+    titleRow.appendChild(title);
+
+    if (project.status === "completed") {
+      const badge = document.createElement("span");
+      badge.className = "assignment-done-badge";
+      badge.textContent = "✓ done";
+      titleRow.appendChild(badge);
+    }
+
+    body.appendChild(titleRow);
 
     const meta = document.createElement("div");
     meta.className = "assignment-card-meta";
     if (project.dueDate) {
-      const due = formatDate(project.dueDate);
       const span = document.createElement("span");
-      span.textContent = `due ${due}`;
+      span.textContent = `due ${formatDate(project.dueDate)}`;
       meta.appendChild(span);
     }
     if (project.totalEstimatedMinutes) {
@@ -756,7 +782,9 @@ function renderAssignments(projects) {
     body.appendChild(meta);
     card.appendChild(body);
 
+    const isDone = project.status === "completed";
     card.appendChild(buildCardMenu([
+      { label: isDone ? "Mark as active" : "Mark as complete", onClick: () => toggleAssignmentDone(project) },
       { label: "Edit", onClick: () => openAssignmentModal(project) },
       { label: "Delete", danger: true, onClick: () => deleteAssignment(project) },
     ]));
@@ -897,6 +925,19 @@ async function deleteAssignment(project) {
     await loadAssignments(state.currentCourse.id);
   } catch (err) {
     alert(`couldn't delete: ${err.message}`);
+  }
+}
+
+async function toggleAssignmentDone(project) {
+  const newStatus = project.status === "completed" ? "active" : "completed";
+  try {
+    await api(`/projects/${project.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: newStatus }),
+    });
+    await loadAssignments(state.currentCourse.id);
+  } catch (err) {
+    alert(`couldn't update: ${err.message}`);
   }
 }
 

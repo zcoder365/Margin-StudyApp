@@ -458,13 +458,21 @@ def update_project(project_id):
             updates["dueDate"] = datetime.fromisoformat(body["dueDate"]) if body["dueDate"] else None
         except ValueError:
             return jsonify({"error": "dueDate must be ISO format"}), 400
+    if "status" in body:
+        if body["status"] not in ("active", "completed"):
+            return jsonify({"error": "status must be active or completed"}), 400
+        updates["status"] = body["status"]
+        if body["status"] == "completed":
+            updates["completedAt"] = firestore.SERVER_TIMESTAMP
+        else:
+            updates["completedAt"] = None
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
 
     project_ref.update(updates)
     fresh = project_ref.get().to_dict()
     fresh["id"] = project_id
-    serialize_timestamps(fresh, ["dueDate", "createdAt"])
+    serialize_timestamps(fresh, ["dueDate", "createdAt", "completedAt"])
     return jsonify(fresh)
 
 

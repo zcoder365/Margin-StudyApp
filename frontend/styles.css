@@ -545,6 +545,31 @@ body {
 }
 .assignment-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
 
+.assignment-card.completed { opacity: 0.55; }
+.assignment-card.completed .assignment-card-title { text-decoration: line-through; }
+
+.assignment-done-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--success);
+  background: var(--success-bg);
+  border: 1px solid;
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.course-completion {
+  font-size: 0.78rem;
+  color: var(--text-3);
+  font-weight: 400;
+  margin-left: 0.5rem;
+}
+
 .assignment-card-color {
   width: 3px;
   align-self: stretch;

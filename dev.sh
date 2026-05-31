@@ -14,8 +14,12 @@ else
 fi
 
 # ── check .env ───────────────────────────────────────────────────────────────
-if [ ! -f "$ROOT/backend/.env" ]; then
-  echo "⚠  no backend/.env found — copy .env.example and fill it in before running."
+if [ -f "$ROOT/.env" ]; then
+  ENV_FILE="$ROOT/.env"
+elif [ -f "$ROOT/backend/.env" ]; then
+  ENV_FILE="$ROOT/backend/.env"
+else
+  echo "⚠  no .env file found (checked .env and backend/.env) — fill one in before running."
   exit 1
 fi
 

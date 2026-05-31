@@ -73,6 +73,7 @@ let state = {
   currentCourse: null,   // { id, name, color }
   currentProject: null,  // { id, title, dueDate, extractedText, totalEstimatedMinutes }
   tasks: [],             // tasks for currentProject
+  weekStartDay: 1,       // 1=Mon (default), 0=Sun
 };
 
 
@@ -323,6 +324,11 @@ onAuthStateChanged(auth, async (user) => {
         method: "POST",
         body: JSON.stringify({ displayName: user.displayName || "" }),
       });
+      // load week start preference before showing anything
+      const meData = await api("/me");
+      state.weekStartDay = meData.weekStartDay ?? 1;
+      calWeekStart = getWeekStart(new Date());
+
       showView("home");
       await loadTerms();
       await loadHome();
@@ -1615,6 +1621,9 @@ const saveProfileBtn   = document.getElementById("save-profile-btn");
 const profileSaveMsg   = document.getElementById("profile-save-msg");
 const resetPwBtn       = document.getElementById("reset-pw-btn");
 const resetPwMsg       = document.getElementById("reset-pw-msg");
+const weekStartSelect  = document.getElementById("week-start-select");
+const savePrefsBtn     = document.getElementById("save-prefs-btn");
+const prefsSaveMsg     = document.getElementById("prefs-save-msg");
 
 profilePageBtn.addEventListener("click", async () => {
   closeAllDropdowns();
@@ -1623,6 +1632,7 @@ profilePageBtn.addEventListener("click", async () => {
     const data = await api("/me");
     profileNameInput.value = data.displayName || "";
     profileEmailDisp.value = data.email || "";
+    weekStartSelect.value = String(data.weekStartDay ?? 1);
   } catch (err) {
     console.error("failed to load profile:", err);
   }
@@ -1642,6 +1652,22 @@ saveProfileBtn.addEventListener("click", async () => {
     showMsg(profileSaveMsg, `Couldn't save: ${err.message}`, "error");
   } finally {
     saveProfileBtn.disabled = false;
+  }
+});
+
+savePrefsBtn.addEventListener("click", async () => {
+  const weekStartDay = parseInt(weekStartSelect.value);
+  savePrefsBtn.disabled = true;
+  prefsSaveMsg.classList.add("hidden");
+  try {
+    await api("/me", { method: "PATCH", body: JSON.stringify({ weekStartDay }) });
+    state.weekStartDay = weekStartDay;
+    calWeekStart = getWeekStart(new Date());
+    showMsg(prefsSaveMsg, "Preferences saved.", "success");
+  } catch (err) {
+    showMsg(prefsSaveMsg, `Couldn't save: ${err.message}`, "error");
+  } finally {
+    savePrefsBtn.disabled = false;
   }
 });
 
@@ -1677,9 +1703,10 @@ const calPrevBtn    = document.getElementById("cal-prev-btn");
 const calTodayBtn   = document.getElementById("cal-today-btn");
 const calNextBtn    = document.getElementById("cal-next-btn");
 
-const CAL_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const CAL_DAYS_FROM_MON = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const CAL_DAYS_FROM_SUN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-let calWeekStart = getMondayOfWeek(new Date());
+let calWeekStart = getWeekStart(new Date());
 let calTasks = [];
 
 calendarBtn.addEventListener("click", async () => {
@@ -1699,11 +1726,12 @@ async function loadCalendar() {
   }
 }
 
-function getMondayOfWeek(date) {
+function getWeekStart(date) {
   const d = new Date(date);
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  d.setDate(d.getDate() + diff);
+  const day = d.getDay(); // 0=Sun … 6=Sat
+  const start = state.weekStartDay; // 1=Mon, 0=Sun
+  const diff = (day - start + 7) % 7;
+  d.setDate(d.getDate() - diff);
   d.setHours(0, 0, 0, 0);
   return d;
 }
@@ -1738,7 +1766,7 @@ function renderCalendar() {
 
     const dayName = document.createElement("div");
     dayName.className = "cal-day-name";
-    dayName.textContent = CAL_DAYS[i];
+    dayName.textContent = (state.weekStartDay === 1 ? CAL_DAYS_FROM_MON : CAL_DAYS_FROM_SUN)[i];
 
     const dayNum = document.createElement("div");
     dayNum.className = "cal-day-num";
@@ -1806,7 +1834,7 @@ calNextBtn.addEventListener("click", () => {
 });
 
 calTodayBtn.addEventListener("click", () => {
-  calWeekStart = getMondayOfWeek(new Date());
+  calWeekStart = getWeekStart(new Date());
   renderCalendar();
 });
 

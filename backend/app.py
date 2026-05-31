@@ -118,7 +118,12 @@ def health():
 def me():
     snap = user_doc(g.user_id).get()
     data = snap.to_dict() if snap.exists else {}
-    return jsonify({"userId": g.user_id, "email": g.user_email, "displayName": data.get("displayName", "")})
+    return jsonify({
+        "userId": g.user_id,
+        "email": g.user_email,
+        "displayName": data.get("displayName", ""),
+        "weekStartDay": data.get("weekStartDay", 1),  # 1=Mon, 0=Sun
+    })
 
 
 @app.route("/api/me", methods=["PATCH"])
@@ -128,6 +133,8 @@ def update_me():
     updates = {}
     if "displayName" in body:
         updates["displayName"] = body["displayName"].strip()
+    if "weekStartDay" in body and body["weekStartDay"] in (0, 1):
+        updates["weekStartDay"] = body["weekStartDay"]
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
     user_doc(g.user_id).update(updates)

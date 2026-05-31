@@ -1064,6 +1064,19 @@ body {
 .profile-field input:focus { outline: none; border-color: #999; box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
 .profile-field input:disabled { background: var(--bg); color: var(--text-2); cursor: default; }
 
+.profile-select {
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  font-family: var(--font);
+  background: var(--surface);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: border-color var(--transition);
+}
+.profile-select:focus { outline: none; border-color: #999; box-shadow: 0 0 0 3px rgba(0,0,0,0.05); }
+
 .profile-hint {
   font-size: 0.82rem;
   color: var(--text-2);

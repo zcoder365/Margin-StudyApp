@@ -198,7 +198,8 @@ const viewHome        = document.getElementById("view-home");
 const viewProfile     = document.getElementById("view-profile");
 const viewGrades      = document.getElementById("view-grades");
 const viewCalendar    = document.getElementById("view-calendar");
-const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar };
+const viewProgress    = document.getElementById("view-progress");
+const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar, progress: viewProgress };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -238,6 +239,7 @@ function renderBreadcrumb(view) {
   if (view === "home") return;
   if (view === "profile")  { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
   if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("calendar")); return; }
+  if (view === "progress") { breadcrumb.append(sep(), crumbCurrent("progress")); return; }
 
   if (view === "dashboard") {
     breadcrumb.append(sep(), crumbLink("home", goHome));
@@ -524,6 +526,7 @@ termSelect.addEventListener("change", async () => {
     // refresh other views if open
     if (!viewHome.classList.contains("hidden")) await loadHome();
     if (!viewCalendar.classList.contains("hidden")) await loadCalendar();
+    if (!viewProgress.classList.contains("hidden")) await loadProgress();
   } catch (err) {
     console.error("failed to set current term:", err);
   }
@@ -1692,6 +1695,138 @@ function showMsg(el, text, type) {
   el.classList.remove("hidden");
   setTimeout(() => el.classList.add("hidden"), 5000);
 }
+
+// ---------------------------------------------------------------------------
+// progress dashboard
+// ---------------------------------------------------------------------------
+const progressBtn  = document.getElementById("progress-btn");
+const progressGrid = document.getElementById("progress-grid");
+
+progressBtn.addEventListener("click", async () => {
+  showView("progress");
+  renderBreadcrumb("progress");
+  await loadProgress();
+});
+
+async function loadProgress() {
+  const termId = termSelect.value || state.currentTermId;
+  try {
+    const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
+    renderProgress(data.tasks);
+  } catch (err) {
+    console.error("failed to load progress:", err);
+  }
+}
+
+function renderProgress(tasks) {
+  progressGrid.innerHTML = "";
+
+  if (!tasks.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty-state progress-empty";
+    empty.textContent = "No tasks yet — add some assignments to track your progress 💛";
+    progressGrid.appendChild(empty);
+    return;
+  }
+
+  // group tasks by course
+  const courses = {};
+  for (const task of tasks) {
+    if (!courses[task.courseId]) {
+      courses[task.courseId] = {
+        name: task.courseName,
+        color: task.courseColor,
+        tasks: [],
+      };
+    }
+    courses[task.courseId].tasks.push(task);
+  }
+
+  for (const { name, color, tasks: courseTasks } of Object.values(courses)) {
+    const total = courseTasks.length;
+    const done  = courseTasks.filter(t => t.status === "done").length;
+    const pct   = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    const totalMins   = courseTasks.reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+    const doneMins    = courseTasks.filter(t => t.status === "done")
+                                   .reduce((s, t) => s + (t.estimatedMinutes || 0), 0);
+    const spentMins   = courseTasks.reduce((s, t) => s + (t.timeSpent || 0), 0);
+
+    const card = document.createElement("div");
+    card.className = "progress-card";
+    card.style.setProperty("--course-color", color || "#ccc");
+
+    // course name
+    const nameEl = document.createElement("div");
+    nameEl.className = "progress-card-name";
+    nameEl.textContent = name;
+    card.appendChild(nameEl);
+
+    // tasks stat
+    const taskStat = document.createElement("div");
+    taskStat.className = "progress-stat";
+
+    const taskHeader = document.createElement("div");
+    taskHeader.className = "progress-stat-header";
+
+    const taskLabel = document.createElement("span");
+    taskLabel.className = "progress-stat-label";
+    taskLabel.textContent = "Tasks";
+
+    const taskValue = document.createElement("span");
+    taskValue.className = "progress-stat-value";
+    taskValue.textContent = `${done} / ${total} done`;
+
+    taskHeader.appendChild(taskLabel);
+    taskHeader.appendChild(taskValue);
+    taskStat.appendChild(taskHeader);
+
+    const track = document.createElement("div");
+    track.className = "progress-track";
+    const fill = document.createElement("div");
+    fill.className = "progress-bar-fill";
+    fill.style.width = `${pct}%`;
+    track.appendChild(fill);
+    taskStat.appendChild(track);
+    card.appendChild(taskStat);
+
+    // time stat
+    const timeStat = document.createElement("div");
+    timeStat.className = "progress-stat";
+
+    const timeLabel = document.createElement("div");
+    timeLabel.className = "progress-stat-label";
+    timeLabel.textContent = "Time";
+    timeStat.appendChild(timeLabel);
+
+    const timeRow = document.createElement("div");
+    timeRow.className = "progress-time-row";
+
+    const addTimeStat = (num, label, muted = false) => {
+      const wrap = document.createElement("div");
+      wrap.className = "progress-time-stat";
+      const numEl = document.createElement("div");
+      numEl.className = `progress-time-num${muted ? " muted" : ""}`;
+      numEl.textContent = num;
+      const labelEl = document.createElement("div");
+      labelEl.className = "progress-time-label";
+      labelEl.textContent = label;
+      wrap.appendChild(numEl);
+      wrap.appendChild(labelEl);
+      timeRow.appendChild(wrap);
+    };
+
+    addTimeStat(spentMins > 0 ? formatMinutes(spentMins) : "—", "spent");
+    addTimeStat(doneMins  > 0 ? formatMinutes(doneMins)  : "—", "done (est)", true);
+    addTimeStat(totalMins > 0 ? formatMinutes(totalMins) : "—", "total (est)", true);
+
+    timeStat.appendChild(timeRow);
+    card.appendChild(timeStat);
+
+    progressGrid.appendChild(card);
+  }
+}
+
 
 // ---------------------------------------------------------------------------
 // calendar

@@ -446,7 +446,8 @@ body {
 
 .term-card:hover .card-menu-btn,
 .course-card:hover .card-menu-btn,
-.assignment-card:hover .card-menu-btn { opacity: 1; }
+.assignment-card:hover .card-menu-btn,
+.task-item:hover .card-menu-btn { opacity: 1; }
 .card-menu-btn:focus { opacity: 1; outline: none; }
 
 .card-menu-btn:hover { background: var(--bg); color: var(--text-1); }
@@ -679,6 +680,9 @@ body {
 .task-item:last-child { border-bottom: none; }
 .task-item:hover { background: #faf9f7; }
 .task-item.done { opacity: 0.5; }
+
+.task-item .card-menu-wrap { margin-top: 1px; }
+.task-item .card-menu-btn { font-size: 0.85rem; padding: 0.05rem 0.25rem; }
 
 .task-checkbox {
   width: 17px;

@@ -757,6 +757,12 @@ def update_task(task_id):
     if "title" in body:
         updates["title"] = body["title"].strip()
 
+    if "estimatedMinutes" in body:
+        val = body["estimatedMinutes"]
+        if val is not None and (not isinstance(val, (int, float)) or val <= 0):
+            return jsonify({"error": "estimatedMinutes must be a positive number"}), 400
+        updates["estimatedMinutes"] = val
+
     if "status" in body:
         new_status = body["status"]
         if new_status not in ("pending", "scheduled", "done"):
@@ -805,6 +811,16 @@ def update_task(task_id):
     fresh["id"] = task_id
     serialize_timestamps(fresh, ["dueDate", "scheduledDate", "originalScheduledDate", "completedAt", "createdAt"])
     return jsonify(fresh)
+
+
+@app.route("/api/tasks/<task_id>", methods=["DELETE"])
+@require_auth
+def delete_task(task_id):
+    task_ref = user_doc(g.user_id).collection("tasks").document(task_id)
+    if not task_ref.get().exists:
+        return jsonify({"error": "task not found"}), 404
+    task_ref.delete()
+    return jsonify({"deleted": task_id})
 
 
 # -----------------------------------------------------------------------------

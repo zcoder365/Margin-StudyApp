@@ -297,12 +297,13 @@
   <div id="task-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Add a task</h3>
+        <h3 id="task-modal-title">Add a task</h3>
         <button class="modal-close" id="cancel-task-btn">✕</button>
       </div>
       <div class="modal-body">
         <label>Description <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" /></label>
         <label>Estimated time (min) <input type="number" id="task-minutes-input" min="1" placeholder="30" /></label>
+        <label>Due date <input type="date" id="task-due-input" /></label>
       </div>
       <div class="modal-footer">
         <button id="save-task-btn" class="btn btn-primary">Save</button>

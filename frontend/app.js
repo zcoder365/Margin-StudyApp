@@ -179,8 +179,10 @@ const cancelAssignmentBtn = document.getElementById("cancel-assignment-btn");
 const saveAssignmentBtn  = document.getElementById("save-assignment-btn");
 
 const taskModal          = document.getElementById("task-modal");
+const taskModalTitle     = document.getElementById("task-modal-title");
 const taskTitleInput     = document.getElementById("task-title-input");
 const taskMinutesInput   = document.getElementById("task-minutes-input");
+const taskDueInput       = document.getElementById("task-due-input");
 const cancelTaskBtn      = document.getElementById("cancel-task-btn");
 const saveTaskBtn        = document.getElementById("save-task-btn");
 
@@ -1043,7 +1045,26 @@ function buildTaskItem(task) {
   body.appendChild(timeRow);
 
   item.appendChild(body);
+
+  // ··· menu
+  item.appendChild(buildCardMenu([
+    { label: "Edit", onClick: () => openTaskModal(task) },
+    { label: "Delete", danger: true, onClick: () => deleteTask(task) },
+  ]));
+
   return item;
+}
+
+async function deleteTask(task) {
+  if (!confirm(`Delete "${task.title}"? This can't be undone.`)) return;
+  try {
+    await api(`/tasks/${task.id}`, { method: "DELETE" });
+    state.tasks = state.tasks.filter(t => t.id !== task.id);
+    renderTasks(state.tasks);
+    renderEstimateBanner(state.tasks, state.currentProject);
+  } catch (err) {
+    alert(`couldn't delete: ${err.message}`);
+  }
 }
 
 async function toggleTaskDone(task) {
@@ -1082,14 +1103,20 @@ async function saveTimeSpent(taskId, value) {
   }
 }
 
-// add task manually
-addTaskBtn.addEventListener("click", () => {
-  taskTitleInput.value = "";
-  taskMinutesInput.value = "";
+// add / edit task
+let editingTaskId = null;
+
+function openTaskModal(task = null) {
+  editingTaskId = task ? task.id : null;
+  taskModalTitle.textContent = task ? "Edit task" : "Add a task";
+  taskTitleInput.value = task ? task.title : "";
+  taskMinutesInput.value = task ? (task.estimatedMinutes || "") : "";
+  taskDueInput.value = task?.dueDate ? task.dueDate.slice(0, 10) : "";
   taskModal.classList.remove("hidden");
   taskTitleInput.focus();
-});
+}
 
+addTaskBtn.addEventListener("click", () => openTaskModal());
 cancelTaskBtn.addEventListener("click", () => taskModal.classList.add("hidden"));
 
 saveTaskBtn.addEventListener("click", async () => {
@@ -1099,23 +1126,38 @@ saveTaskBtn.addEventListener("click", async () => {
 
   saveTaskBtn.disabled = true;
   try {
-    const task = await api("/tasks", {
-      method: "POST",
-      body: JSON.stringify({
-        projectId: state.currentProject.id,
+    if (editingTaskId) {
+      const body = {
         title,
-        estimatedMinutes: parseInt(taskMinutesInput.value) || 30,
-      }),
-    });
+        estimatedMinutes: parseInt(taskMinutesInput.value) || null,
+        dueDate: taskDueInput.value || null,
+      };
+      const updated = await api(`/tasks/${editingTaskId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      const idx = state.tasks.findIndex(t => t.id === editingTaskId);
+      if (idx !== -1) state.tasks[idx] = updated;
+    } else {
+      const task = await api("/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          projectId: state.currentProject.id,
+          title,
+          estimatedMinutes: parseInt(taskMinutesInput.value) || 30,
+          dueDate: taskDueInput.value || null,
+        }),
+      });
+      state.tasks.push(task);
+    }
     taskModal.classList.add("hidden");
-    state.tasks.push(task);
     renderTasks(state.tasks);
     renderEstimateBanner(state.tasks, state.currentProject);
-    tasksEmpty.classList.add("hidden");
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
   } finally {
     saveTaskBtn.disabled = false;
+    editingTaskId = null;
   }
 });
 

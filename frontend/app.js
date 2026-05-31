@@ -69,6 +69,7 @@ async function api(path, options = {}) {
 // ---------------------------------------------------------------------------
 let state = {
   currentTerm: null,     // { id, name }
+  currentTermId: null,   // backend-stored "active" term id
   currentCourse: null,   // { id, name, color }
   currentProject: null,  // { id, title, dueDate, extractedText, totalEstimatedMinutes }
   tasks: [],             // tasks for currentProject
@@ -358,6 +359,7 @@ addTermBtn.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ name: name.trim(), setAsCurrent: true }),
     });
+    state.currentTermId = term.id;
     await loadTerms();
     termSelect.value = term.id;
     await loadHome();
@@ -395,9 +397,6 @@ function renderHome(terms, allCourses) {
     countByTerm[c.termId] = (countByTerm[c.termId] || 0) + 1;
   }
 
-  // find current term id from the select
-  const currentTermId = termSelect.value;
-
   for (const term of terms) {
     const card = document.createElement("div");
     card.className = "term-card";
@@ -410,7 +409,7 @@ function renderHome(terms, allCourses) {
     name.textContent = term.name;
     top.appendChild(name);
 
-    if (term.id === currentTermId) {
+    if (term.id === state.currentTermId) {
       const badge = document.createElement("span");
       badge.className = "term-active-badge";
       badge.textContent = "current";
@@ -426,10 +425,14 @@ function renderHome(terms, allCourses) {
     card.appendChild(meta);
 
     // ··· menu
-    card.appendChild(buildCardMenu([
+    const menuItems = [
       { label: "Rename", onClick: () => renameTerm(term) },
-      { label: "Delete", danger: true, onClick: () => deleteTerm(term) },
-    ]));
+    ];
+    if (term.id !== state.currentTermId) {
+      menuItems.push({ label: "Set as current", onClick: () => setCurrentTerm(term) });
+    }
+    menuItems.push({ label: "Delete", danger: true, onClick: () => deleteTerm(term) });
+    card.appendChild(buildCardMenu(menuItems));
 
     card.addEventListener("click", () => openTerm(term));
     termsGrid.appendChild(card);
@@ -442,6 +445,17 @@ async function openTerm(term) {
   document.getElementById("course-title").textContent = term.name;
   showView("dashboard");
   await loadCourses(term.id);
+}
+
+async function setCurrentTerm(term) {
+  try {
+    await api(`/terms/${term.id}`, { method: "PATCH", body: JSON.stringify({ setAsCurrent: true }) });
+    state.currentTermId = term.id;
+    termSelect.value = term.id;
+    await loadHome();
+  } catch (err) {
+    alert(`Couldn't set current term: ${err.message}`);
+  }
 }
 
 async function renameTerm(term) {
@@ -473,6 +487,7 @@ async function deleteTerm(term) {
 async function loadTerms() {
   try {
     const data = await api("/terms");
+    state.currentTermId = data.currentTermId || null;
     renderTermSelect(data.terms);
   } catch (err) {
     console.error("failed to load terms:", err);
@@ -487,11 +502,22 @@ function renderTermSelect(terms) {
     opt.textContent = term.name;
     termSelect.appendChild(opt);
   }
+  // select the current term if set, otherwise the first
+  if (state.currentTermId) termSelect.value = state.currentTermId;
 }
 
 termSelect.addEventListener("change", async () => {
   const termId = termSelect.value;
   if (!termId) return;
+  // update the backend's active term
+  try {
+    await api(`/terms/${termId}`, { method: "PATCH", body: JSON.stringify({ setAsCurrent: true }) });
+    state.currentTermId = termId;
+    // update the home page badges if it's visible
+    if (!viewHome.classList.contains("hidden")) await loadHome();
+  } catch (err) {
+    console.error("failed to set current term:", err);
+  }
   showView("dashboard");
   await loadCourses(termId);
 });
@@ -504,6 +530,7 @@ newTermBtn.addEventListener("click", async () => {
       method: "POST",
       body: JSON.stringify({ name: name.trim(), setAsCurrent: true }),
     });
+    state.currentTermId = term.id;
     await loadTerms();
     termSelect.value = term.id;
     showView("dashboard");

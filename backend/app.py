@@ -188,13 +188,15 @@ def init_user():
 @app.route("/api/terms", methods=["GET"])
 @require_auth
 def list_terms():
+    user_snap = user_doc(g.user_id).get()
+    current_term_id = user_snap.to_dict().get("currentTermId") if user_snap.exists else None
     terms = []
     for doc in user_doc(g.user_id).collection("terms").stream():
         t = doc.to_dict()
         t["id"] = doc.id
         serialize_timestamps(t, ["startDate", "endDate"])
         terms.append(t)
-    return jsonify({"terms": terms})
+    return jsonify({"terms": terms, "currentTermId": current_term_id})
 
 
 @app.route("/api/terms", methods=["POST"])
@@ -225,15 +227,26 @@ def create_term():
 def update_term(term_id):
     body = request.get_json(silent=True) or {}
     name = body.get("name", "").strip()
-    if not name:
-        return jsonify({"error": "name is required"}), 400
+    set_as_current = body.get("setAsCurrent", False)
+
+    if not name and not set_as_current:
+        return jsonify({"error": "nothing to update"}), 400
 
     term_ref = user_doc(g.user_id).collection("terms").document(term_id)
-    if not term_ref.get().exists:
+    snap = term_ref.get()
+    if not snap.exists:
         return jsonify({"error": "term not found"}), 404
 
-    term_ref.update({"name": name})
-    return jsonify({"id": term_id, "name": name})
+    if name:
+        term_ref.update({"name": name})
+    if set_as_current:
+        user_doc(g.user_id).update({"currentTermId": term_id})
+
+    result = snap.to_dict()
+    result["id"] = term_id
+    if name:
+        result["name"] = name
+    return jsonify(result)
 
 
 @app.route("/api/terms/<term_id>", methods=["DELETE"])

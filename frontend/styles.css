@@ -479,10 +479,21 @@ body {
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   background: var(--surface);
-  border-left: 4px solid var(--course-color, #ccc);
   cursor: pointer;
   transition: box-shadow var(--transition), transform var(--transition);
   box-shadow: var(--shadow-sm);
+}
+
+.course-card::after {
+  content: "";
+  position: absolute;
+  top: 0.875rem;
+  right: 0.875rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--course-color, #ccc);
+  pointer-events: none;
 }
 .course-card:hover {
   box-shadow: var(--shadow);

@@ -1079,7 +1079,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  width: 100%;
   max-width: 520px;
+  margin: 0 auto;
 }
 
 .profile-section {
@@ -1641,6 +1643,7 @@ body {
 .hamburger-btn:hover { background: var(--bg); }
 .hamburger-btn span {
   display: block;
+  width: 20px;
   height: 2px;
   background: var(--text-1);
   border-radius: 2px;

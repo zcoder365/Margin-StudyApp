@@ -1176,7 +1176,7 @@ function openTaskModal(task = null) {
   taskModalTitle.textContent = task ? "Edit task" : "Add a task";
   taskTitleInput.value = task ? task.title : "";
   taskMinutesInput.value = task ? (task.estimatedMinutes || "") : "";
-  taskDueInput.value = task?.dueDate ? task.dueDate.slice(0, 10) : "";
+  taskDueInput.value = task?.dueDate ? task.dueDate.slice(0, 10) : new Date().toLocaleDateString("en-CA");
   taskModal.classList.remove("hidden");
   taskTitleInput.focus();
 }

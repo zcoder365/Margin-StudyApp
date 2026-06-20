@@ -726,6 +726,12 @@ def create_task():
         order = existing_count
 
     task_ref = user_doc(g.user_id).collection("tasks").document()
+    raw_due = body.get("dueDate") or datetime.utcnow().date().isoformat()
+    try:
+        due_date_val = datetime.fromisoformat(raw_due)
+    except ValueError:
+        return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
+
     task_data = {
         "projectId": project_id,
         "courseId": course_id,
@@ -733,7 +739,7 @@ def create_task():
         "estimatedMinutes": body.get("estimatedMinutes", 30),
         "timeSpent": None,
         "status": "pending",
-        "dueDate": None,
+        "dueDate": due_date_val,
         "scheduledDate": None,
         "scheduledBlockId": None,
         "rescheduleCount": 0,
@@ -747,6 +753,7 @@ def create_task():
 
     row = {k: v for k, v in task_data.items() if k != "createdAt"}
     row["id"] = task_ref.id
+    row["dueDate"] = due_date_val.isoformat()
     return jsonify(row), 201
 
 

@@ -1171,8 +1171,11 @@ async function saveTimeSpent(taskId, value) {
 // add / edit task
 let editingTaskId = null;
 
-function openTaskModal(task = null) {
+let taskModalFromCalendar = false;
+
+function openTaskModal(task = null, opts = {}) {
   editingTaskId = task ? task.id : null;
+  taskModalFromCalendar = opts.fromCalendar || false;
   taskModalTitle.textContent = task ? "Edit task" : "Add a task";
   taskTitleInput.value = task ? task.title : "";
   taskMinutesInput.value = task ? (task.estimatedMinutes || "") : "";
@@ -1203,6 +1206,8 @@ saveTaskBtn.addEventListener("click", async () => {
       });
       const idx = state.tasks.findIndex(t => t.id === editingTaskId);
       if (idx !== -1) state.tasks[idx] = updated;
+      const calIdx = calTasks.findIndex(t => t.id === editingTaskId);
+      if (calIdx !== -1) calTasks[calIdx] = { ...calTasks[calIdx], ...updated };
     } else {
       const task = await api("/tasks", {
         method: "POST",
@@ -1216,8 +1221,12 @@ saveTaskBtn.addEventListener("click", async () => {
       state.tasks.push(task);
     }
     taskModal.classList.add("hidden");
-    renderTasks(state.tasks);
-    renderEstimateBanner(state.tasks, state.currentProject);
+    if (taskModalFromCalendar) {
+      renderCalendar();
+    } else {
+      renderTasks(state.tasks);
+      renderEstimateBanner(state.tasks, state.currentProject);
+    }
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
   } finally {
@@ -2081,6 +2090,11 @@ function buildCalTaskPill(task) {
     setTimeout(() => pill.classList.add("dragging"), 0);
   });
   pill.addEventListener("dragend", () => pill.classList.remove("dragging"));
+
+  pill.addEventListener("click", (e) => {
+    if (pill.classList.contains("dragging")) return;
+    openTaskModal(task, { fromCalendar: true });
+  });
 
   const course = document.createElement("div");
   course.className = "cal-task-course";

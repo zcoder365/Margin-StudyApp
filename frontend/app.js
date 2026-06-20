@@ -2121,7 +2121,14 @@ function renderCalendar() {
     const dayStr = day.toISOString().slice(0, 10);
     const isToday = day.getTime() === today.getTime();
 
-    const dayTasks = calTasks.filter(t => t.dueDate && t.dueDate.slice(0, 10) === dayStr);
+    const dayTasks = calTasks
+      .filter(t => t.dueDate && t.dueDate.slice(0, 10) === dayStr)
+      .sort((a, b) => {
+        const aDone = a.status === "done" ? 1 : 0;
+        const bDone = b.status === "done" ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+        return (a.estimatedMinutes || 0) - (b.estimatedMinutes || 0);
+      });
 
     const col = document.createElement("div");
     col.className = `cal-day${isToday ? " today" : ""}`;

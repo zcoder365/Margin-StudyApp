@@ -1194,7 +1194,9 @@ function openTaskModal(task = null, opts = {}) {
   taskModalTitle.textContent = task ? "Edit task" : "Add a task";
   taskTitleInput.value = task ? task.title : "";
   taskMinutesInput.value = task ? (task.estimatedMinutes || "") : "";
-  taskDueInput.value = task?.dueDate ? task.dueDate.slice(0, 10) : new Date().toLocaleDateString("en-CA");
+  taskDueInput.value = task?.dueDate
+    ? task.dueDate.slice(0, 10)
+    : (opts.date || new Date().toLocaleDateString("en-CA"));
   taskModal.classList.remove("hidden");
   taskTitleInput.focus();
 }
@@ -1224,6 +1226,7 @@ saveTaskBtn.addEventListener("click", async () => {
       const calIdx = calTasks.findIndex(t => t.id === editingTaskId);
       if (calIdx !== -1) calTasks[calIdx] = { ...calTasks[calIdx], ...updated };
     } else {
+      if (!state.currentProject) { alert("open an assignment first to add a task 💛"); return; }
       const task = await api("/tasks", {
         method: "POST",
         body: JSON.stringify({
@@ -1234,6 +1237,7 @@ saveTaskBtn.addEventListener("click", async () => {
         }),
       });
       state.tasks.push(task);
+      if (taskModalFromCalendar) calTasks.push(task);
     }
     taskModal.classList.add("hidden");
     if (taskModalFromCalendar) {
@@ -2076,7 +2080,8 @@ function renderCalendar() {
     if (dayTasks.length === 0) {
       const empty = document.createElement("div");
       empty.className = "cal-empty";
-      empty.textContent = "—";
+      empty.textContent = "+ add task";
+      empty.addEventListener("click", () => openTaskModal(null, { fromCalendar: true, date: dayStr }));
       tasksEl.appendChild(empty);
     } else {
       for (const task of dayTasks) {

@@ -1551,7 +1551,11 @@ body {
   font-size: 0.75rem;
   text-align: center;
   padding: 1rem 0.5rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition), color var(--transition);
 }
+.cal-empty:hover { background: var(--border); color: var(--text-2); }
 
 .cal-task-pill {
   display: flex;

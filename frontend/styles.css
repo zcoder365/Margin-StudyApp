@@ -861,7 +861,7 @@ body {
 }
 
 .grade-letter { font-size: 2.75rem; font-weight: 800; line-height: 1; letter-spacing: -1px; }
-.grade-pct { font-size: 0.875rem; color: var(--text-2); margin-top: 0.3rem; }
+.grade-pct { font-size: 2.75rem; font-weight: 800; line-height: 1; letter-spacing: -1px; }
 
 .target-section {
   display: flex;

@@ -75,14 +75,14 @@ most planners assume infinite time. margin starts with the time you actually hav
 
 ## local dev
 
-**1. clone and set up**
+### 1. clone and set up
 
 ```bash
 git clone https://github.com/your-username/Margin-StudyApp.git
 cd Margin-StudyApp
 ```
 
-**2. environment variables**
+### 2. environment variables
 
 create a `.env` file in the project root and fill in:
 
@@ -96,7 +96,7 @@ PORT=5000
 
 get `firebase-key.json` from: Firebase Console → Project settings → Service accounts → Generate new private key.
 
-**3. run**
+### 3. run
 
 ```bash
 ./dev.sh

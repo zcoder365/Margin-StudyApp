@@ -1828,11 +1828,13 @@ const saveProfileBtn   = document.getElementById("save-profile-btn");
 const profileSaveMsg   = document.getElementById("profile-save-msg");
 const resetPwBtn       = document.getElementById("reset-pw-btn");
 const resetPwMsg       = document.getElementById("reset-pw-msg");
-const darkModeToggle   = document.getElementById("dark-mode-toggle");
-const weekStartSelect  = document.getElementById("week-start-select");
-const workIntervalInput = document.getElementById("work-interval-input");
-const savePrefsBtn     = document.getElementById("save-prefs-btn");
-const prefsSaveMsg     = document.getElementById("prefs-save-msg");
+const darkModeToggle      = document.getElementById("dark-mode-toggle");
+const weekStartSelect     = document.getElementById("week-start-select");
+const workIntervalInput   = document.getElementById("work-interval-input");
+const savePrefsBtn        = document.getElementById("save-prefs-btn");
+const prefsSaveMsg        = document.getElementById("prefs-save-msg");
+const notificationsToggle = document.getElementById("notifications-toggle");
+const notificationsStatus = document.getElementById("notifications-status");
 
 profilePageBtn.addEventListener("click", async () => {
   closeAllDropdowns();
@@ -1855,6 +1857,7 @@ profilePageBtn.addEventListener("click", async () => {
     darkModeToggle.checked = data.darkMode ?? false;
     weekStartSelect.value = String(data.weekStartDay ?? 1);
     workIntervalInput.value = data.workIntervalMinutes ?? 25;
+    updateNotifStatus();
   } catch (err) {
     console.error("failed to load profile:", err);
   }
@@ -1876,6 +1879,78 @@ saveProfileBtn.addEventListener("click", async () => {
     saveProfileBtn.disabled = false;
   }
 });
+
+// ---------------------------------------------------------------------------
+// notifications
+// ---------------------------------------------------------------------------
+function updateNotifStatus() {
+  const perm = Notification.permission;
+  if (perm === "denied") {
+    notificationsStatus.textContent = "Notifications blocked — enable them in your browser settings.";
+    notificationsToggle.disabled = true;
+    notificationsToggle.checked = false;
+  } else if (perm === "granted") {
+    notificationsStatus.textContent = "Notifications are enabled.";
+    notificationsToggle.disabled = false;
+    notificationsToggle.checked = localStorage.getItem("margin_notif") === "1";
+  } else {
+    notificationsStatus.textContent = "Enable to get daily reminders for due and overdue tasks.";
+    notificationsToggle.disabled = false;
+    notificationsToggle.checked = false;
+  }
+}
+
+notificationsToggle.addEventListener("change", async () => {
+  if (!notificationsToggle.checked) {
+    localStorage.removeItem("margin_notif");
+    updateNotifStatus();
+    return;
+  }
+  if (Notification.permission === "default") {
+    const result = await Notification.requestPermission();
+    if (result !== "granted") {
+      notificationsToggle.checked = false;
+      updateNotifStatus();
+      return;
+    }
+  }
+  localStorage.setItem("margin_notif", "1");
+  updateNotifStatus();
+  fireTaskReminders();
+});
+
+function fireTaskReminders() {
+  if (Notification.permission !== "granted") return;
+  if (localStorage.getItem("margin_notif") !== "1") return;
+
+  const todayStr = new Date().toLocaleDateString("en-CA");
+  const due    = calTasks.filter(t => t.status !== "done" && t.dueDate?.slice(0, 10) === todayStr);
+  const overdue = calTasks.filter(t => t.status !== "done" && t.dueDate?.slice(0, 10) < todayStr);
+
+  if (overdue.length) {
+    new Notification("margin — overdue tasks", {
+      body: `You have ${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}. Check your calendar.`,
+      icon: "/favicon.svg",
+    });
+  }
+  if (due.length) {
+    new Notification("margin — due today", {
+      body: `${due.length} task${due.length > 1 ? "s" : ""} due today. You've got this 💛`,
+      icon: "/favicon.svg",
+    });
+  }
+}
+
+// fire reminders once after calendar loads
+const _origLoadCalendar = loadCalendar;
+async function loadCalendar() {
+  await _origLoadCalendar();
+  if (localStorage.getItem("margin_notif") === "1" &&
+      !sessionStorage.getItem("margin_notif_fired")) {
+    sessionStorage.setItem("margin_notif_fired", "1");
+    fireTaskReminders();
+  }
+}
 
 // toggle dark mode instantly without waiting for save
 darkModeToggle.addEventListener("change", () => applyTheme(darkModeToggle.checked));

@@ -1952,9 +1952,26 @@ function renderProgress(tasks) {
   progressGrid.innerHTML = "";
 
   if (!tasks.length) {
-    const empty = document.createElement("p");
-    empty.className = "empty-state progress-empty";
-    empty.textContent = "No tasks yet — add some assignments to track your progress 💛";
+    const hasCourses = Object.keys(state.courses || {}).length > 0 ||
+      document.getElementById("courses-list")?.querySelector(".course-card");
+
+    const empty = document.createElement("div");
+    empty.className = "progress-empty-state";
+    empty.innerHTML = `
+      <div class="progress-empty-icon">📊</div>
+      <h3 class="progress-empty-title">Nothing to track yet</h3>
+      <p class="progress-empty-desc">${
+        hasCourses
+          ? "Open an assignment, upload a PDF, and margin will generate tasks you can track here."
+          : "Add a course and some assignments first — once you have tasks, you'll see your progress here."
+      }</p>
+      <button class="btn btn-primary progress-empty-cta">${
+        hasCourses ? "Go to my courses" : "Add a course"
+      }</button>
+    `;
+    empty.querySelector("button").addEventListener("click", () => {
+      document.getElementById("logo-btn").click();
+    });
     progressGrid.appendChild(empty);
     return;
   }

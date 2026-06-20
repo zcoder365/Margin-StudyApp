@@ -8,7 +8,7 @@ if [ ! -f "$ROOT/venv/bin/activate" ]; then
   echo "venv not found. setting it up..."
   python3 -m venv "$ROOT/venv"
   source "$ROOT/venv/bin/activate"
-  pip install -q -r "$ROOT/backend/requirements.txt"
+  pip install -q -r "$ROOT/requirements.txt"
 else
   source "$ROOT/venv/bin/activate"
 fi
@@ -25,7 +25,7 @@ fi
 
 # ── start backend ────────────────────────────────────────────────────────────
 echo "starting backend on http://localhost:5000 ..."
-cd "$ROOT/backend"
+cd "$ROOT"
 python app.py &
 BACKEND_PID=$!
 

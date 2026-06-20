@@ -1380,8 +1380,7 @@ function renderGrades() {
 
   if (!categories.length) {
     gradesEmpty.classList.remove("hidden");
-    gradeLetter.textContent = "—";
-    gradePct.textContent = "no grades yet";
+    gradePct.textContent = "—";
     return;
   }
 
@@ -1411,11 +1410,9 @@ function renderGrades() {
   const currentGrade = coveredWeight > 0 ? (weightedSum * totalWeight / coveredWeight) : null;
 
   if (currentGrade !== null) {
-    gradeLetter.textContent = pctToLetter(currentGrade);
-    gradePct.textContent = `${currentGrade.toFixed(1)}% current grade`;
+    gradePct.textContent = `${currentGrade.toFixed(1)}%`;
   } else {
-    gradeLetter.textContent = "—";
-    gradePct.textContent = "no grades entered yet";
+    gradePct.textContent = "—";
   }
 
   updateTargetResult(currentGrade, categories, catAverages, totalWeight);

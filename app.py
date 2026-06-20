@@ -1,10 +1,3 @@
-"""
-margin — flask backend
-======================
-entry point for the api. handles firebase auth verification, firestore reads/writes,
-and anthropic claude calls for pdf → task breakdown.
-"""
-
 import os
 import re
 import base64

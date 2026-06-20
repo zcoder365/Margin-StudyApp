@@ -114,13 +114,6 @@ get `firebase-key.json` from: Firebase Console → Project settings → Service 
 
 `dev.sh` sets up the venv if needed, starts the backend and frontend, and opens `http://localhost:3000`. press Ctrl+C to stop.
 
-## what's next
-
-- **background push notifications** — reminders even when the browser is closed (requires service worker)
-- **email reminders** — daily digest of due and overdue tasks
-- **calendar export** — sync your task schedule to Google Calendar or iCal
-- **mobile app** — PWA or native iOS/Android
-
 ## built by
 
 zoe droulias 💛

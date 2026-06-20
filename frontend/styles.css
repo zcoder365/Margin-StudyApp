@@ -303,6 +303,40 @@ body {
   flex-shrink: 0;
 }
 .profile-btn:hover { opacity: 0.82; }
+.profile-photo {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 0.25rem;
+}
+.profile-avatar-img {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border);
+}
+.profile-avatar-fallback {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 
 /* dropdown system */
 .dropdown-wrap { position: relative; }

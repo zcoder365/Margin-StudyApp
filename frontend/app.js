@@ -379,7 +379,11 @@ onAuthStateChanged(auth, async (user) => {
     signedOutView.classList.add("hidden");
     signedInView.classList.remove("hidden");
     userEmailEl.textContent = user.email;
-    profileInitials.textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+    if (user.photoURL) {
+      profileBtn.innerHTML = `<img src="${user.photoURL}" alt="" class="profile-photo" />`;
+    } else {
+      profileBtn.innerHTML = `<span id="profile-initials">${(user.displayName || user.email || "?")[0].toUpperCase()}</span>`;
+    }
 
     try {
       await api("/users/init", {
@@ -1820,6 +1824,17 @@ const prefsSaveMsg     = document.getElementById("prefs-save-msg");
 profilePageBtn.addEventListener("click", async () => {
   closeAllDropdowns();
   showView("profile");
+
+  // populate avatar
+  const avatarRow = document.getElementById("profile-avatar-row");
+  const authUser = auth.currentUser;
+  if (authUser?.photoURL) {
+    avatarRow.innerHTML = `<img src="${authUser.photoURL}" alt="Profile photo" class="profile-avatar-img" />`;
+  } else {
+    const initials = (authUser?.displayName || authUser?.email || "?")[0].toUpperCase();
+    avatarRow.innerHTML = `<div class="profile-avatar-fallback">${initials}</div>`;
+  }
+
   try {
     const data = await api("/me");
     profileNameInput.value = data.displayName || "";

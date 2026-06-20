@@ -958,6 +958,20 @@ pdfFileInput.addEventListener("change", async () => {
   uploadPdfBtn.disabled = true;
   autoScheduleBtn.disabled = true;
 
+  const spinnerMsg = document.getElementById("pdf-spinner-msg");
+  const messages = [
+    "Reading your PDF…",
+    "Extracting assignment text…",
+    "Generating tasks with AI…",
+    "Almost there…",
+  ];
+  let msgIdx = 0;
+  spinnerMsg.textContent = messages[0];
+  const msgInterval = setInterval(() => {
+    msgIdx = Math.min(msgIdx + 1, messages.length - 1);
+    spinnerMsg.textContent = messages[msgIdx];
+  }, 4000);
+
   try {
     const formData = new FormData();
     formData.append("pdf", file);
@@ -979,6 +993,7 @@ pdfFileInput.addEventListener("change", async () => {
   } catch (err) {
     alert(`couldn't process pdf: ${err.message}`);
   } finally {
+    clearInterval(msgInterval);
     pdfSpinner.classList.add("hidden");
     uploadPdfBtn.disabled = false;
     autoScheduleBtn.disabled = false;

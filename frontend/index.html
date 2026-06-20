@@ -101,7 +101,21 @@
           <button id="add-term-btn" class="btn btn-primary">+ Add term</button>
         </div>
         <div id="terms-grid" class="terms-grid">
-          <p id="terms-empty" class="empty-state">No terms yet. Add one to get started 💛</p>
+          <div id="terms-empty" class="hidden">
+            <div id="onboarding-card" class="onboarding-card hidden">
+              <img src="favicon.svg" class="onboarding-mark" alt="" />
+              <h2 class="onboarding-title">welcome to margin 💛</h2>
+              <p class="onboarding-desc">margin helps you break down assignments, schedule your study sessions, and stay on top of your courses — all in one place.</p>
+              <ol class="onboarding-steps">
+                <li>Create a <strong>term</strong> (e.g. Fall 2026)</li>
+                <li>Add your <strong>courses</strong></li>
+                <li>Upload an <strong>assignment PDF</strong> — margin will generate tasks for you using AI</li>
+                <li>Let margin <strong>auto-schedule</strong> your tasks around your weekly commitments</li>
+              </ol>
+              <button id="onboarding-start-btn" class="btn btn-primary btn-lg">Create your first term →</button>
+            </div>
+            <p id="terms-empty-simple" class="empty-state hidden">No terms yet. Add one to get started 💛</p>
+          </div>
         </div>
       </div>
 

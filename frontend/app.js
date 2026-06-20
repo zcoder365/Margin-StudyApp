@@ -428,6 +428,8 @@ const termsGrid    = document.getElementById("terms-grid");
 const termsEmpty   = document.getElementById("terms-empty");
 const addTermBtn   = document.getElementById("add-term-btn");
 
+document.getElementById("onboarding-start-btn").addEventListener("click", () => addTermBtn.click());
+
 addTermBtn.addEventListener("click", async () => {
   const name = prompt("Name this term (e.g. Fall 2026):");
   if (!name?.trim()) return;
@@ -463,9 +465,20 @@ function renderHome(terms, allCourses) {
   if (!terms.length) {
     termsGrid.appendChild(termsEmpty);
     termsEmpty.classList.remove("hidden");
+    const isFirstVisit = !localStorage.getItem("margin_visited");
+    const onboardingCard = document.getElementById("onboarding-card");
+    const simpleEmpty = document.getElementById("terms-empty-simple");
+    if (isFirstVisit) {
+      onboardingCard.classList.remove("hidden");
+      simpleEmpty.classList.add("hidden");
+    } else {
+      onboardingCard.classList.add("hidden");
+      simpleEmpty.classList.remove("hidden");
+    }
     return;
   }
 
+  localStorage.setItem("margin_visited", "1");
   termsEmpty.classList.add("hidden");
 
   // count courses per term

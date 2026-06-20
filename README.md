@@ -117,7 +117,6 @@ cd backend && python app.py
 # terminal 2 — frontend
 cd frontend && python -m http.server 3000
 ```
-</details>
 
 ## what's next
 

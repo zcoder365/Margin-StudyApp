@@ -510,7 +510,42 @@ def upload_assignment_pdf(project_id):
         return jsonify({"error": f"could not read pdf: {str(e)}"}), 500
 
     total_estimated = 0
-    raw_tasks = []  # user adds tasks manually for now
+    raw_tasks = []
+
+    if extracted_text:
+        try:
+            response = anthropic_client.messages.create(
+                model="claude-opus-4-8",
+                max_tokens=4096,
+                thinking={"type": "adaptive"},
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "You are a study assistant. Given the following assignment text, "
+                        "break it down into a list of specific, actionable tasks a student needs to complete. "
+                        "For each task, estimate how many minutes it will take.\n\n"
+                        "Respond with ONLY a JSON array. Each element must have:\n"
+                        "  \"title\": short task description (max 80 chars)\n"
+                        "  \"estimatedMinutes\": integer\n\n"
+                        "Assignment text:\n" + extracted_text[:12000]
+                    ),
+                }],
+            )
+            import json as _json
+            text_content = next(
+                (b.text for b in response.content if hasattr(b, "text")), ""
+            )
+            # strip markdown code fences if present
+            text_content = text_content.strip()
+            if text_content.startswith("```"):
+                text_content = text_content.split("```")[1]
+                if text_content.startswith("json"):
+                    text_content = text_content[4:]
+            raw_tasks = _json.loads(text_content.strip())
+            total_estimated = sum(t.get("estimatedMinutes", 30) for t in raw_tasks)
+        except Exception as e:
+            print(f"Claude task generation failed: {e}")
+            raw_tasks = []
 
     # delete any existing ai-generated tasks for this project before adding new ones
     existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).where("aiGenerated", "==", True).stream()
@@ -539,7 +574,7 @@ def upload_assignment_pdf(project_id):
             "estimatedMinutes": task.get("estimatedMinutes", 30),
             "timeSpent": None,
             "status": "pending",
-            "dueDate": None,
+            "dueDate": datetime.fromisoformat(datetime.utcnow().date().isoformat()),
             "scheduledDate": None,
             "scheduledBlockId": None,
             "rescheduleCount": 0,
@@ -552,6 +587,7 @@ def upload_assignment_pdf(project_id):
         create_batch.set(task_ref, task_data)
         row = {k: v for k, v in task_data.items() if k != "createdAt"}
         row["id"] = task_ref.id
+        row["dueDate"] = task_data["dueDate"].isoformat()
         created_tasks.append(row)
 
     create_batch.commit()
@@ -1009,7 +1045,7 @@ def get_calendar():
             t["courseName"] = course.get("name", "")
             t["courseColor"] = course.get("color", "#ccc")
             t["projectTitle"] = project.get("title", "")
-            serialize_timestamps(t, ["createdAt"])
+            serialize_timestamps(t, ["dueDate", "createdAt"])
             result.append(t)
 
     return jsonify({"tasks": result})

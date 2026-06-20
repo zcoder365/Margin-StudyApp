@@ -1554,6 +1554,9 @@ body {
 }
 
 .cal-task-pill {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
   padding: 0.3rem 0.5rem;
   border-radius: var(--radius-sm);
   font-size: 0.72rem;
@@ -1563,6 +1566,24 @@ body {
   box-shadow: inset 3px 0 0 var(--task-color, var(--border));
   cursor: default;
   transition: background var(--transition);
+}
+
+.cal-task-meta { flex: 1; min-width: 0; }
+
+.cal-task-check {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.1rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+.cal-task-check:hover { border-color: var(--accent); }
+.cal-task-check.checked {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .cal-task-pill:hover { background: var(--border); }

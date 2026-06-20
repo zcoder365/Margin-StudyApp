@@ -2110,6 +2110,30 @@ function buildCalTaskPill(task) {
     openTaskModal(task, { fromCalendar: true });
   });
 
+  const check = document.createElement("div");
+  check.className = `cal-task-check${task.status === "done" ? " checked" : ""}`;
+  check.title = task.status === "done" ? "Mark incomplete" : "Mark complete";
+  check.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    const newStatus = task.status === "done" ? "pending" : "done";
+    try {
+      const updated = await api(`/tasks/${task.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const idx = calTasks.findIndex(t => t.id === task.id);
+      if (idx !== -1) calTasks[idx] = { ...calTasks[idx], ...updated };
+      const stateIdx = state.tasks.findIndex(t => t.id === task.id);
+      if (stateIdx !== -1) state.tasks[stateIdx] = updated;
+      renderCalendar();
+    } catch (err) {
+      console.error("failed to toggle task:", err);
+    }
+  });
+
+  const meta = document.createElement("div");
+  meta.className = "cal-task-meta";
+
   const course = document.createElement("div");
   course.className = "cal-task-course";
   course.textContent = task.courseName || "";
@@ -2118,14 +2142,17 @@ function buildCalTaskPill(task) {
   title.className = "cal-task-title";
   title.textContent = task.title;
 
-  pill.appendChild(course);
-  pill.appendChild(title);
+  meta.appendChild(course);
+  meta.appendChild(title);
+
+  pill.appendChild(check);
+  pill.appendChild(meta);
 
   if (task.estimatedMinutes) {
     const est = document.createElement("div");
     est.className = "cal-task-est";
     est.textContent = `~${formatMinutes(task.estimatedMinutes)}`;
-    pill.appendChild(est);
+    meta.appendChild(est);
   }
 
   return pill;

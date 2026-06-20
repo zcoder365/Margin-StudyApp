@@ -71,8 +71,26 @@
           </div>
         </div>
 
+        <!-- hamburger (mobile only) -->
+        <button class="hamburger-btn" id="hamburger-btn" aria-label="menu">
+          <span></span><span></span><span></span>
+        </button>
+
       </div>
     </header>
+
+    <!-- mobile nav drawer -->
+    <div class="mobile-nav hidden" id="mobile-nav">
+      <div class="mobile-nav-term">
+        <select id="mobile-term-select" class="term-select"></select>
+      </div>
+      <button id="mobile-calendar-btn" class="mobile-nav-item">Calendar</button>
+      <button id="mobile-progress-btn" class="mobile-nav-item">Progress</button>
+      <button id="mobile-schedule-btn" class="mobile-nav-item">Schedule</button>
+      <div class="mobile-nav-divider"></div>
+      <button id="mobile-profile-btn" class="mobile-nav-item">Profile settings</button>
+      <button id="mobile-signout-btn" class="mobile-nav-item danger">Sign out</button>
+    </div>
 
     <main class="app-main">
 

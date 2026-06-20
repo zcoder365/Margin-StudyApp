@@ -1623,6 +1623,66 @@ body {
 }
 
 
+/* ── hamburger + mobile nav ── */
+.hamburger-btn {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 36px;
+  height: 36px;
+  padding: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition);
+}
+.hamburger-btn:hover { background: var(--bg); }
+.hamburger-btn span {
+  display: block;
+  height: 2px;
+  background: var(--text-1);
+  border-radius: 2px;
+  transition: transform var(--transition), opacity var(--transition);
+}
+.hamburger-btn.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.hamburger-btn.open span:nth-child(2) { opacity: 0; }
+.hamburger-btn.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+.mobile-nav {
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  z-index: 49;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+}
+.mobile-nav-term {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-soft);
+}
+.mobile-nav-term .term-select { width: 100%; max-width: 100%; font-size: 0.9rem; }
+.mobile-nav-item {
+  background: none;
+  border: none;
+  text-align: left;
+  padding: 0.75rem 1.25rem;
+  font-size: 0.95rem;
+  font-family: var(--font);
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.mobile-nav-item:hover { background: var(--bg); }
+.mobile-nav-item.danger { color: var(--danger); }
+.mobile-nav-divider { height: 1px; background: var(--border-soft); margin: 0.25rem 0; }
+
 /* ── mobile ── */
 @media (max-width: 700px) {
 
@@ -1632,13 +1692,13 @@ body {
   .breadcrumb { display: none; }
   .user-email { display: none; }
 
-  /* shrink nav buttons to text-only, tighter */
-  .header-right { gap: 0.25rem; }
-  .btn-ghost { padding: 0.3rem 0.5rem; font-size: 0.78rem; }
-  .term-select { max-width: 90px; font-size: 0.75rem; padding: 0.25rem 0.4rem; }
-
-  /* hide the "···" term menu on mobile — too cramped */
-  #term-menu-wrap { display: none; }
+  /* show hamburger, hide desktop nav */
+  .hamburger-btn { display: flex; }
+  .term-area     { display: none; }
+  #calendar-btn  { display: none; }
+  #progress-btn  { display: none; }
+  #schedule-btn  { display: none; }
+  #profile-menu-wrap { display: none; }
 
   /* grids → single column */
   .terms-grid    { grid-template-columns: 1fr; }

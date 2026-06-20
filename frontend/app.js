@@ -304,6 +304,61 @@ termMenuBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDropdo
 profileBtn.addEventListener("click", (e) => { e.stopPropagation(); toggleDropdown(profileBtn, profileDropdown); });
 document.addEventListener("click", closeAllDropdowns);
 
+// ---------------------------------------------------------------------------
+// mobile nav
+// ---------------------------------------------------------------------------
+const hamburgerBtn    = document.getElementById("hamburger-btn");
+const mobileNav       = document.getElementById("mobile-nav");
+const mobileTermSel   = document.getElementById("mobile-term-select");
+
+function closeMobileNav() {
+  mobileNav.classList.add("hidden");
+  hamburgerBtn.classList.remove("open");
+}
+
+hamburgerBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const isOpen = !mobileNav.classList.contains("hidden");
+  if (isOpen) { closeMobileNav(); } else {
+    mobileNav.classList.remove("hidden");
+    hamburgerBtn.classList.add("open");
+  }
+});
+
+document.addEventListener("click", (e) => {
+  if (!mobileNav.contains(e.target) && e.target !== hamburgerBtn) closeMobileNav();
+});
+
+// keep mobile term select in sync with desktop
+termSelect.addEventListener("change", () => { mobileTermSel.value = termSelect.value; });
+mobileTermSel.addEventListener("change", () => {
+  termSelect.value = mobileTermSel.value;
+  termSelect.dispatchEvent(new Event("change"));
+  closeMobileNav();
+});
+
+function syncMobileTermSelect(terms, currentTermId) {
+  mobileTermSel.innerHTML = termSelect.innerHTML;
+  if (currentTermId) mobileTermSel.value = currentTermId;
+}
+
+// mobile nav button actions — delegate to existing handlers
+document.getElementById("mobile-calendar-btn").addEventListener("click", () => {
+  document.getElementById("calendar-btn").click(); closeMobileNav();
+});
+document.getElementById("mobile-progress-btn").addEventListener("click", () => {
+  document.getElementById("progress-btn").click(); closeMobileNav();
+});
+document.getElementById("mobile-schedule-btn").addEventListener("click", () => {
+  document.getElementById("schedule-btn").click(); closeMobileNav();
+});
+document.getElementById("mobile-profile-btn").addEventListener("click", () => {
+  document.getElementById("profile-page-btn").click(); closeMobileNav();
+});
+document.getElementById("mobile-signout-btn").addEventListener("click", () => {
+  signOut(auth); closeMobileNav();
+});
+
 
 // ---------------------------------------------------------------------------
 // auth
@@ -520,8 +575,8 @@ function renderTermSelect(terms) {
     opt.textContent = term.name;
     termSelect.appendChild(opt);
   }
-  // select the current term if set, otherwise the first
   if (state.currentTermId) termSelect.value = state.currentTermId;
+  syncMobileTermSelect(terms, state.currentTermId);
 }
 
 termSelect.addEventListener("change", async () => {

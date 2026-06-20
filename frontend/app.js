@@ -1941,17 +1941,6 @@ function fireTaskReminders() {
   }
 }
 
-// fire reminders once after calendar loads
-const _origLoadCalendar = loadCalendar;
-async function loadCalendar() {
-  await _origLoadCalendar();
-  if (localStorage.getItem("margin_notif") === "1" &&
-      !sessionStorage.getItem("margin_notif_fired")) {
-    sessionStorage.setItem("margin_notif_fired", "1");
-    fireTaskReminders();
-  }
-}
-
 // toggle dark mode instantly without waiting for save
 darkModeToggle.addEventListener("change", () => applyTheme(darkModeToggle.checked));
 
@@ -2178,6 +2167,11 @@ async function loadCalendar() {
     const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
     calTasks = data.tasks;
     renderCalendar();
+    if (localStorage.getItem("margin_notif") === "1" &&
+        !sessionStorage.getItem("margin_notif_fired")) {
+      sessionStorage.setItem("margin_notif_fired", "1");
+      fireTaskReminders();
+    }
   } catch (err) {
     console.error("failed to load calendar:", err);
   }

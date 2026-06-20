@@ -1237,6 +1237,48 @@ body {
 .profile-msg.error   { background: var(--danger-bg);  color: var(--danger); }
 
 /* ── empty states ── */
+.shortcuts-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.35);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+.shortcuts-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 360px;
+}
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+.shortcuts-header h3 { font-size: 1rem; font-weight: 700; }
+.shortcuts-list { display: flex; flex-direction: column; gap: 0.6rem; }
+.shortcut-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.88rem; }
+.shortcut-row dt { display: flex; gap: 0.25rem; }
+.shortcut-row dd { color: var(--text-2); }
+kbd {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.78rem;
+  font-family: var(--font);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 0 var(--border);
+  color: var(--text-1);
+}
+
 .onboarding-card {
   max-width: 520px;
   margin: 3rem auto;

@@ -425,6 +425,22 @@
     <div id="timer-done-msg" class="timer-done-msg hidden">session complete — time logged 💛</div>
   </div>
 
+  <!-- keyboard shortcuts overlay -->
+  <div id="shortcuts-overlay" class="shortcuts-overlay hidden" role="dialog" aria-modal="true">
+    <div class="shortcuts-box">
+      <div class="shortcuts-header">
+        <h3>Keyboard shortcuts</h3>
+        <button id="shortcuts-close-btn" class="modal-close">✕</button>
+      </div>
+      <dl class="shortcuts-list">
+        <div class="shortcut-row"><dt><kbd>T</kbd></dt><dd>Add a task</dd></div>
+        <div class="shortcut-row"><dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>Previous / next week (calendar)</dd></div>
+        <div class="shortcut-row"><dt><kbd>Esc</kbd></dt><dd>Close modal or menu</dd></div>
+        <div class="shortcut-row"><dt><kbd>?</kbd></dt><dd>Show this help</dd></div>
+      </dl>
+    </div>
+  </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

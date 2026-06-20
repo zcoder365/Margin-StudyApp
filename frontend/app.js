@@ -2457,3 +2457,45 @@ function formatMinutes(mins) {
   const m = Math.round(mins % 60);
   return m > 0 ? `${h}h ${m}min` : `${h}h`;
 }
+
+
+// ---------------------------------------------------------------------------
+// keyboard shortcuts
+// ---------------------------------------------------------------------------
+const shortcutsOverlay  = document.getElementById("shortcuts-overlay");
+const shortcutsCloseBtn = document.getElementById("shortcuts-close-btn");
+
+function openShortcuts() { shortcutsOverlay.classList.remove("hidden"); }
+function closeShortcuts() { shortcutsOverlay.classList.add("hidden"); }
+
+shortcutsCloseBtn.addEventListener("click", closeShortcuts);
+shortcutsOverlay.addEventListener("click", (e) => { if (e.target === shortcutsOverlay) closeShortcuts(); });
+
+const allModals = [courseModal, assignmentModal, taskModal, scheduleModal, schemeModal, gradeModal];
+
+document.addEventListener("keydown", (e) => {
+  const tag = document.activeElement?.tagName;
+  const typing = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+
+  if (e.key === "Escape") {
+    if (!shortcutsOverlay.classList.contains("hidden")) { closeShortcuts(); return; }
+    if (!mobileNav.classList.contains("hidden")) { closeMobileNav(); return; }
+    for (const modal of allModals) {
+      if (!modal.classList.contains("hidden")) { modal.classList.add("hidden"); return; }
+    }
+    return;
+  }
+
+  if (typing) return;
+
+  if (e.key === "?" || e.key === "/") { e.preventDefault(); openShortcuts(); return; }
+
+  if (e.key === "t" || e.key === "T") {
+    if (!viewAssignment.classList.contains("hidden")) { openTaskModal(); return; }
+  }
+
+  if (!viewCalendar.classList.contains("hidden")) {
+    if (e.key === "ArrowLeft")  { calPrevBtn.click(); return; }
+    if (e.key === "ArrowRight") { calNextBtn.click(); return; }
+  }
+});

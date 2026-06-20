@@ -1568,6 +1568,8 @@ body {
 .cal-task-pill:hover { background: var(--border); }
 .cal-task-pill.done { opacity: 0.4; }
 .cal-task-pill.done .cal-task-title { text-decoration: line-through; }
+.cal-task-pill.overdue { background: var(--danger-bg); border-color: #fca5a5; }
+.cal-task-pill.overdue .cal-task-title { color: var(--danger); }
 
 .cal-task-course {
   font-size: 0.62rem;

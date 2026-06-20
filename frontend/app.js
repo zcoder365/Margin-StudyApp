@@ -2076,7 +2076,9 @@ function renderCalendar() {
 
 function buildCalTaskPill(task) {
   const pill = document.createElement("div");
-  pill.className = `cal-task-pill${task.status === "done" ? " done" : ""}`;
+  const todayStr = new Date().toLocaleDateString("en-CA");
+  const isOverdue = task.status !== "done" && task.dueDate && task.dueDate.slice(0, 10) < todayStr;
+  pill.className = `cal-task-pill${task.status === "done" ? " done" : ""}${isOverdue ? " overdue" : ""}`;
   pill.style.setProperty("--task-color", task.courseColor || "#ccc");
   pill.draggable = true;
   pill.dataset.taskId = task.id;

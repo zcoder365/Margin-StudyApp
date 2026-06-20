@@ -531,10 +531,14 @@ function renderHome(terms, allCourses) {
 
 async function openTerm(term) {
   state.currentTerm = term;
+  state.currentTermId = term.id;
   termSelect.value = term.id;
   document.getElementById("course-title").textContent = term.name;
   showView("dashboard");
-  await loadCourses(term.id);
+  await Promise.all([
+    api(`/terms/${term.id}`, { method: "PATCH", body: JSON.stringify({ setAsCurrent: true }) }),
+    loadCourses(term.id),
+  ]);
 }
 
 async function setCurrentTerm(term) {

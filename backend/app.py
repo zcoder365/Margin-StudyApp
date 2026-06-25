@@ -515,7 +515,7 @@ def upload_assignment_pdf(project_id):
     if extracted_text:
         try:
             response = gemini_client.models.generate_content(
-                model="gemini-3.5-flash",
+                model="gemini-2.5-flash",
                 contents=(
                     "You are a study assistant. Given the following assignment text, "
                     "break it down into a list of specific, actionable tasks a student needs to complete. "

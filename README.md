@@ -1,5 +1,7 @@
 # margin 🌿
 
+<!-- potential URL: marginstudy.app -->
+
 give yourself margin.
 
 margin is a study planner for university students that organizes coursework by term and class, breaks assignments into tasks using AI, schedules them around your real availability, and tracks your grades — all in one quiet, focused tool.

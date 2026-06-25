@@ -1,6 +1,7 @@
 # margin 🌿
 
 <!-- potential URL: marginstudy.app -->
+<!-- AI Model: Gemini 3.5 Flash (https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash) -->
 
 give yourself margin.
 

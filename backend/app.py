@@ -9,7 +9,7 @@ from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-import anthropic
+from google import genai
 import firebase_admin
 from firebase_admin import credentials, auth, firestore
 
@@ -40,8 +40,8 @@ def init_firebase():
 init_firebase()
 db = firestore.client()
 
-# anthropic client for pdf → task breakdown
-anthropic_client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+# gemini client for pdf → task breakdown
+gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 
 # -----------------------------------------------------------------------------
@@ -514,29 +514,20 @@ def upload_assignment_pdf(project_id):
 
     if extracted_text:
         try:
-            response = anthropic_client.messages.create(
-                model="claude-opus-4-8",
-                max_tokens=4096,
-                thinking={"type": "adaptive"},
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "You are a study assistant. Given the following assignment text, "
-                        "break it down into a list of specific, actionable tasks a student needs to complete. "
-                        "For each task, estimate how many minutes it will take.\n\n"
-                        "Respond with ONLY a JSON array. Each element must have:\n"
-                        "  \"title\": short task description (max 80 chars)\n"
-                        "  \"estimatedMinutes\": integer\n\n"
-                        "Assignment text:\n" + extracted_text[:12000]
-                    ),
-                }],
+            response = gemini_client.models.generate_content(
+                model="gemini-3.5-flash",
+                contents=(
+                    "You are a study assistant. Given the following assignment text, "
+                    "break it down into a list of specific, actionable tasks a student needs to complete. "
+                    "For each task, estimate how many minutes it will take.\n\n"
+                    "Respond with ONLY a JSON array. Each element must have:\n"
+                    "  \"title\": short task description (max 80 chars)\n"
+                    "  \"estimatedMinutes\": integer\n\n"
+                    "Assignment text:\n" + extracted_text[:12000]
+                ),
             )
             import json as _json
-            text_content = next(
-                (b.text for b in response.content if hasattr(b, "text")), ""
-            )
-            # strip markdown code fences if present
-            text_content = text_content.strip()
+            text_content = response.text.strip()
             if text_content.startswith("```"):
                 text_content = text_content.split("```")[1]
                 if text_content.startswith("json"):
@@ -544,7 +535,7 @@ def upload_assignment_pdf(project_id):
             raw_tasks = _json.loads(text_content.strip())
             total_estimated = sum(t.get("estimatedMinutes", 30) for t in raw_tasks)
         except Exception as e:
-            print(f"Claude task generation failed: {e}")
+            print(f"Gemini task generation failed: {e}")
             raw_tasks = []
 
     # delete any existing ai-generated tasks for this project before adding new ones

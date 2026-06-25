@@ -25,7 +25,7 @@ fi
 
 # ── start backend ────────────────────────────────────────────────────────────
 echo "starting backend on http://localhost:5000 ..."
-cd "$ROOT"
+cd "$ROOT/backend"
 python app.py &
 BACKEND_PID=$!
 

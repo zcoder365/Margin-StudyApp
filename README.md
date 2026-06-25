@@ -65,7 +65,7 @@ most planners assume infinite time. margin starts with the time you actually hav
 
 ### account & preferences
 
-- Google sign-in with profile photo
+- Google sign-in with profile photo (adjusting profile photo glitch)
 - dark mode
 - configurable week start day and study session length
 - browser notifications for tasks due today and overdue tasks
@@ -84,7 +84,7 @@ most planners assume infinite time. margin starts with the time you actually hav
 - **database:** Firestore (Firebase)
 - **auth:** Firebase Google Auth
 - **pdf parsing:** pypdf
-- **ai:** Anthropic Claude API (`claude-opus-4-8`) — PDF → task breakdown with time estimates
+- **ai:** Google Gemini API (Gemini 3.5 Flash) — PDF → task breakdown with time estimates
 
 ## local dev
 

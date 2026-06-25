@@ -5,8 +5,8 @@ Flask-Cors==5.0.0          # for letting the frontend talk to the backend during
 # firebase
 firebase-admin==6.5.0      # admin SDK for verifying tokens + writing to firestore
 
-# anthropic (we'll need this when we get to the pdf → tasks step)
-anthropic==0.39.0
+# google gemini
+google-genai==1.16.0
 
 # env vars
 python-dotenv==1.0.1       # loads .env file into os.environ

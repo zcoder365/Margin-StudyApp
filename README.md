@@ -95,21 +95,20 @@ git clone https://github.com/your-username/Margin-StudyApp.git
 cd Margin-StudyApp
 ```
 
-### 2. environment variables
+<!-- ### 2. environment variables
 
 create a `.env` file in the project root:
 
 ```text
 FIREBASE_CREDENTIALS=/absolute/path/to/firebase-key.json
-ANTHROPIC_API_KEY=sk-ant-...
 FLASK_SECRET_KEY=your-secret
 ALLOWED_ORIGINS=http://localhost:3000
 PORT=5000
 ```
 
-get `firebase-key.json` from: Firebase Console → Project settings → Service accounts → Generate new private key.
+get `firebase-key.json` from: Firebase Console → Project settings → Service accounts → Generate new private key. -->
 
-### 3. run
+### 2. run
 
 ```bash
 ./dev.sh

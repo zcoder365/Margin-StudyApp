@@ -116,6 +116,10 @@ get `firebase-key.json` from: Firebase Console → Project settings → Service 
 
 `dev.sh` sets up the venv if needed, starts the backend and frontend, and opens `http://localhost:3000`. press Ctrl+C to stop.
 
+## future development
+
+- [ ] "Am I cooked?" radar that gives students an honest study plan before their final exam
+
 ## built by
 
 zoe droulias 💛

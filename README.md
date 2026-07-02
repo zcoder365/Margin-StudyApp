@@ -120,6 +120,7 @@ get `firebase-key.json` from: Firebase Console → Project settings → Service 
 
 - [ ] "Am I cooked?" radar that gives students an honest study plan before their final exam
 - [ ] A study reflection after grades are received (which methods were used, how the student felt about the grade)
+- [ ] Reminders for tasks and assignments
 
 ## built by
 

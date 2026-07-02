@@ -17,12 +17,12 @@ most planners assume infinite time. margin starts with the time you actually hav
 
 - terms → courses → assignments → tasks hierarchy
 - color-coded course cards
-- full create, edit, and delete for terms, courses, assignments, and tasks
-- term switching from the header or home page
+- full create, edit, view, and delete for terms, courses, assignments, and tasks
+- term switching from the navigation bar or home page
 
 ### assignments & AI
 
-- upload an assignment PDF — margin extracts the text and sends it to Claude to generate a task list with time estimates automatically
+- upload an assignment PDF — margin extracts the text and sends it to Gemini to generate a task list with time estimates automatically
 - add tasks manually if you prefer
 - edit task title, estimated time, and due date at any time
 - check off tasks as you complete them and log time spent per task
@@ -65,7 +65,7 @@ most planners assume infinite time. margin starts with the time you actually hav
 
 ### account & preferences
 
-- Google sign-in with profile photo (adjusting profile photo glitch)
+- Google sign-in with profile photo
 - dark mode
 - configurable week start day and study session length
 - browser notifications for tasks due today and overdue tasks

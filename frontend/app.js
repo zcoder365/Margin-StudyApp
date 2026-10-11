@@ -5,63 +5,22 @@
   no framework, just firebase auth + vanilla DOM.
 */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
 import {
-  getAuth,
-  GoogleAuthProvider,
   signInWithPopup,
   signOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+import {
+  auth, provider, api, apiBlob, nav, formatDate, daysUntil, formatMinutes, toISODate, tabs, toast,
+} from "./core.js";
+import { renderCourseDocuments, stopDocumentPolling } from "./documents.js";
+import { renderAssessmentOverview, loadStoredPdf } from "./assessment.js";
+import { loadForecast, renderPlannerTop, buildDayInfo, setDeadlines, refreshPlanner } from "./planner.js";
+import { renderPracticeTab } from "./diagnostics.js";
+import { logSession, renderSessionFollowUp, renderInsights } from "./insights.js";
+import { renderHomeOverview } from "./home.js";
 
-// ---------------------------------------------------------------------------
-// firebase config
-// ---------------------------------------------------------------------------
-const firebaseConfig = {
-  apiKey: "AIzaSyC59bJU9rhAezTFyfOSi138G9xgxXXM8oQ",
-  authDomain: "margin-app-4c293.firebaseapp.com",
-  projectId: "margin-app-4c293",
-  storageBucket: "margin-app-4c293.firebasestorage.app",
-  messagingSenderId: "358817583449",
-  appId: "1:358817583449:web:7b392f1b84693cd3717c48",
-};
-
-const fbApp = initializeApp(firebaseConfig);
-const auth = getAuth(fbApp);
-const provider = new GoogleAuthProvider();
-
-const API_BASE = "http://localhost:5000/api";
-
-
-// ---------------------------------------------------------------------------
-// API helper
-// ---------------------------------------------------------------------------
-async function api(path, options = {}) {
-  const user = auth.currentUser;
-  if (!user) throw new Error("not signed in");
-
-  const idToken = await user.getIdToken();
-
-  // pdf upload goes as FormData, everything else as JSON
-  const isFormData = options.body instanceof FormData;
-
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${idToken}`,
-      ...(isFormData ? {} : { "Content-Type": "application/json" }),
-      ...(options.headers || {}),
-    },
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: `request failed: ${response.status}` }));
-    throw new Error(err.error || `request failed: ${response.status}`);
-  }
-
-  return response.json();
-}
 
 
 // ---------------------------------------------------------------------------
@@ -204,14 +163,58 @@ const viewProfile     = document.getElementById("view-profile");
 const viewGrades      = document.getElementById("view-grades");
 const viewCalendar    = document.getElementById("view-calendar");
 const viewProgress    = document.getElementById("view-progress");
-const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar, progress: viewProgress };
+const viewReview      = document.getElementById("view-review");
+const viewDiagnostic  = document.getElementById("view-diagnostic");
+const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar, progress: viewProgress, review: viewReview, diagnostic: viewDiagnostic };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
     el.classList.toggle("hidden", key !== name);
   }
+  if (name !== "course") stopDocumentPolling();
   renderBreadcrumb(name);
+  window.scrollTo(0, 0);
 }
+
+// bridge for the feature modules
+nav.showView = showView;
+nav.reloadCalendar = () => loadCalendar();
+nav.rerenderCalendar = () => renderCalendar();
+nav.refreshAfterPlanChange = () => refreshPlanner(true);
+nav.openTerm = (term) => openTerm(term);
+nav.selectCourseById = async (courseId, tab) => {
+  let course = state.currentCourse?.id === courseId ? state.currentCourse : null;
+  if (!course) {
+    const { courses } = await api("/courses?termId=all");
+    course = courses.find(c => c.id === courseId) || null;
+    state.currentCourse = course;
+  }
+  if (course && tab) await openCourse(course, tab);
+  return course;
+};
+nav.onStudyLogged = async () => {
+  if (viewAssignment.classList.contains("hidden") || !state.currentProject) return;
+  try {
+    const data = await api(`/tasks?projectId=${state.currentProject.id}`);
+    state.tasks = data.tasks;
+    renderTasks(state.tasks);
+    renderEstimateBanner(state.tasks, state.currentProject);
+  } catch { /* the list refreshes on next open */ }
+  refreshPlanner();
+};
+nav.onForecastChanged = () => {
+  if (!viewAssignment.classList.contains("hidden") && state.currentProject) renderAssessmentOverview(state.currentProject);
+};
+nav.state = state;
+nav.openCourse = (course, tab) => openCourse(course, tab);
+nav.openAssignmentById = async (projectId) => {
+  const project = await api(`/projects/${projectId}`);
+  if (!state.currentCourse || state.currentCourse.id !== project.courseId) {
+    const { courses } = await api("/courses?termId=all");
+    state.currentCourse = courses.find(c => c.id === project.courseId) || null;
+  }
+  await openAssignment(project);
+};
 
 function renderBreadcrumb(view) {
   breadcrumb.innerHTML = "";
@@ -243,7 +246,7 @@ function renderBreadcrumb(view) {
 
   if (view === "home") return;
   if (view === "profile")  { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
-  if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("calendar")); return; }
+  if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("planner")); return; }
   if (view === "progress") { breadcrumb.append(sep(), crumbCurrent("progress")); return; }
 
   if (view === "dashboard") {
@@ -267,6 +270,26 @@ function renderBreadcrumb(view) {
       sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
       sep(), crumbLink(state.currentCourse.name, () => { showView("course"); loadAssignments(state.currentCourse.id); }),
       sep(), crumbCurrent("grade calculator"),
+    );
+    return;
+  }
+
+  if (view === "diagnostic" && state.currentCourse) {
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbLink(state.currentCourse.name, () => openCourse(state.currentCourse, "practice")),
+      sep(), crumbCurrent("diagnostic"),
+    );
+    return;
+  }
+
+  if (view === "review" && state.currentCourse) {
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbLink(state.currentCourse.name, () => openCourse(state.currentCourse, "documents")),
+      sep(), crumbCurrent("review document"),
     );
     return;
   }
@@ -379,10 +402,18 @@ onAuthStateChanged(auth, async (user) => {
     signedOutView.classList.add("hidden");
     signedInView.classList.remove("hidden");
     userEmailEl.textContent = user.email;
+    profileBtn.textContent = "";
     if (user.photoURL) {
-      profileBtn.innerHTML = `<img src="${user.photoURL}" alt="" class="profile-photo" />`;
+      const img = document.createElement("img");
+      img.src = user.photoURL;
+      img.alt = "";
+      img.className = "profile-photo";
+      profileBtn.appendChild(img);
     } else {
-      profileBtn.innerHTML = `<span id="profile-initials">${(user.displayName || user.email || "?")[0].toUpperCase()}</span>`;
+      const span = document.createElement("span");
+      span.id = "profile-initials";
+      span.textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+      profileBtn.appendChild(span);
     }
 
     try {
@@ -454,6 +485,10 @@ async function loadHome() {
       api("/courses?termId=all"),
     ]);
     renderHome(termsData.terms, coursesData.courses);
+    const term = termsData.terms.find(t => t.id === (termsData.currentTermId || state.currentTermId));
+    if (term) state.currentTerm = term;
+    const courseCount = coursesData.courses.filter(c => c.termId === term?.id).length;
+    renderHomeOverview(document.getElementById("home-overview"), term, courseCount);
   } catch (err) {
     console.error("failed to load home:", err);
   }
@@ -711,12 +746,27 @@ function renderCourses(courses) {
   }
 }
 
-async function openCourse(course) {
+const COURSE_TABS = [
+  { id: "assessments", label: "Assessments" },
+  { id: "documents", label: "Documents" },
+  { id: "practice", label: "Practice & gaps" },
+];
+nav.courseTabRenderers = { practice: renderPracticeTab };
+
+async function openCourse(course, tab = "assessments") {
   state.currentCourse = course;
   courseTitle.textContent = course.name;
   // clear stale count from previous course
   document.getElementById("course-completion-count")?.remove();
   showView("course");
+  tabs(document.getElementById("course-tabs"), COURSE_TABS, (id) => {
+    for (const t of COURSE_TABS) {
+      document.getElementById(`course-panel-${t.id}`)?.classList.toggle("hidden", t.id !== id);
+    }
+    if (id !== "documents") stopDocumentPolling();
+    if (id === "documents") renderCourseDocuments(document.getElementById("course-panel-documents"), course);
+    else if (nav.courseTabRenderers[id]) nav.courseTabRenderers[id](document.getElementById(`course-panel-${id}`), course);
+  }, tab);
   await loadAssignments(course.id);
 }
 
@@ -850,9 +900,23 @@ function renderAssignments(projects) {
       span.textContent = `due ${formatDate(project.dueDate)}`;
       meta.appendChild(span);
     }
+    if (project.kind && project.kind !== "assignment") {
+      const kind = document.createElement("span");
+      kind.textContent = project.kind;
+      meta.appendChild(kind);
+    }
+    if (project.weight != null) {
+      const w = document.createElement("span");
+      w.textContent = `${project.weight}% of grade`;
+      meta.appendChild(w);
+    }
     if (project.totalEstimatedMinutes) {
       const est = document.createElement("span");
       est.textContent = `~${formatMinutes(project.totalEstimatedMinutes)}`;
+      meta.appendChild(est);
+    } else if (project.estimatedHours != null) {
+      const est = document.createElement("span");
+      est.textContent = `~${project.estimatedHours}h`;
       meta.appendChild(est);
     }
     body.appendChild(meta);
@@ -876,6 +940,15 @@ async function openAssignment(project) {
   showView("assignment");
   viewAssignment.style.setProperty("--course-color", state.currentCourse?.color || "#ccc");
   renderAssignmentHeader(project);
+  renderAssessmentOverview(project);
+  if (project.documentId) {
+    loadStoredPdf(project).then((url) => {
+      if (url && state.currentProject?.id === project.id && !state.currentProject.pdfUrl) {
+        state.currentProject.pdfUrl = url;
+        renderAssignmentText(state.currentProject);
+      }
+    });
+  }
 
   // load tasks
   try {
@@ -948,11 +1021,18 @@ function renderEstimateBanner(tasks, project) {
 // add / edit assignment modal
 let editingProjectId = null;
 
+const assignmentKindInput  = document.getElementById("assignment-kind-input");
+const assignmentWeightInput = document.getElementById("assignment-weight-input");
+const assignmentHoursInput = document.getElementById("assignment-hours-input");
+
 function openAssignmentModal(project = null) {
   editingProjectId = project ? project.id : null;
   assignmentTitleInput.value = project ? project.title : "";
   assignmentDueInput.value = project?.dueDate ? project.dueDate.slice(0, 10) : "";
-  assignmentModal.querySelector("h3").textContent = project ? "edit assignment" : "add an assignment";
+  assignmentKindInput.value = project?.kind || "assignment";
+  assignmentWeightInput.value = project?.weight ?? "";
+  assignmentHoursInput.value = project?.estimatedHours ?? "";
+  assignmentModal.querySelector("h3").textContent = project ? "Edit assessment" : "Add an assessment";
   assignmentModal.classList.remove("hidden");
   assignmentTitleInput.focus();
 }
@@ -965,13 +1045,24 @@ saveAssignmentBtn.addEventListener("click", async () => {
   if (!title) { alert("give your assignment a title 💛"); return; }
   if (!state.currentCourse) return;
 
+  const extra = {
+    kind: assignmentKindInput.value,
+    weight: assignmentWeightInput.value === "" ? null : Number(assignmentWeightInput.value),
+    estimatedHours: assignmentHoursInput.value === "" ? null : Number(assignmentHoursInput.value),
+  };
+
   saveAssignmentBtn.disabled = true;
   try {
     if (editingProjectId) {
-      await api(`/projects/${editingProjectId}`, {
+      const updated = await api(`/projects/${editingProjectId}`, {
         method: "PATCH",
-        body: JSON.stringify({ title, dueDate: assignmentDueInput.value || null }),
+        body: JSON.stringify({ title, dueDate: assignmentDueInput.value || null, ...extra }),
       });
+      if (state.currentProject?.id === editingProjectId && !viewAssignment.classList.contains("hidden")) {
+        Object.assign(state.currentProject, updated);
+        renderAssignmentHeader(state.currentProject);
+        renderAssessmentOverview(state.currentProject);
+      }
     } else {
       await api("/projects", {
         method: "POST",
@@ -979,6 +1070,7 @@ saveAssignmentBtn.addEventListener("click", async () => {
           courseId: state.currentCourse.id,
           title,
           dueDate: assignmentDueInput.value || null,
+          ...extra,
         }),
       });
     }
@@ -1060,8 +1152,10 @@ pdfFileInput.addEventListener("change", async () => {
     // update local state
     state.currentProject.extractedText = result.extractedText;
     state.currentProject.totalEstimatedMinutes = result.totalEstimatedMinutes;
+    state.currentProject.documentId = result.documentId || state.currentProject.documentId;
     state.currentProject.pdfUrl = URL.createObjectURL(file);
     state.tasks = result.tasks;
+    if (result.warning) toast(result.warning, "error");
 
     renderAssignmentText(state.currentProject);
     renderTasks(result.tasks);
@@ -1098,11 +1192,12 @@ autoScheduleBtn.addEventListener("click", async () => {
     state.tasks = result.tasks;
     renderTasks(result.tasks);
     renderEstimateBanner(result.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     alert(`auto-schedule failed: ${err.message}`);
   } finally {
     autoScheduleBtn.disabled = false;
-    autoScheduleBtn.textContent = "🗓 auto-schedule tasks";
+    autoScheduleBtn.textContent = "Auto-schedule";
   }
 });
 
@@ -1218,6 +1313,7 @@ async function deleteTask(task) {
     state.tasks = state.tasks.filter(t => t.id !== task.id);
     renderTasks(state.tasks);
     renderEstimateBanner(state.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     alert(`couldn't delete: ${err.message}`);
   }
@@ -1237,6 +1333,7 @@ async function toggleTaskDone(task) {
     const el = taskList.querySelector(`[data-task-id="${task.id}"]`);
     if (el) el.replaceWith(buildTaskItem(updated));
     renderEstimateBanner(state.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     console.error("failed to toggle task:", err);
   }
@@ -1264,6 +1361,10 @@ let editingTaskId = null;
 
 let taskModalFromCalendar = false;
 
+const taskPinnedInput = document.getElementById("task-pinned-input");
+const taskDepsInput   = document.getElementById("task-deps-input");
+const taskDepsField   = document.getElementById("task-deps-field");
+
 function openTaskModal(task = null, opts = {}) {
   editingTaskId = task ? task.id : null;
   taskModalFromCalendar = opts.fromCalendar || false;
@@ -1273,6 +1374,18 @@ function openTaskModal(task = null, opts = {}) {
   taskDueInput.value = task?.dueDate
     ? task.dueDate.slice(0, 10)
     : (opts.date || new Date().toLocaleDateString("en-CA"));
+  taskPinnedInput.checked = !!task?.pinned;
+  // dependencies can only be chosen among tasks of the open assessment
+  const siblings = taskModalFromCalendar ? [] : state.tasks.filter(t => t.id !== task?.id);
+  taskDepsInput.innerHTML = "";
+  for (const t of siblings) {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.title;
+    opt.selected = (task?.dependsOn || []).includes(t.id);
+    taskDepsInput.appendChild(opt);
+  }
+  taskDepsField.classList.toggle("hidden", siblings.length === 0);
   taskModal.classList.remove("hidden");
   taskTitleInput.focus();
 }
@@ -1283,7 +1396,8 @@ cancelTaskBtn.addEventListener("click", () => taskModal.classList.add("hidden"))
 saveTaskBtn.addEventListener("click", async () => {
   const title = taskTitleInput.value.trim();
   if (!title) { alert("give the task a description 💛"); return; }
-  if (!state.currentProject) return;
+  // editing works from anywhere; creating needs an open assessment to attach the task to
+  if (!editingTaskId && !state.currentProject) { alert("open an assessment first to add a task to it 💛"); return; }
 
   saveTaskBtn.disabled = true;
   try {
@@ -1292,7 +1406,11 @@ saveTaskBtn.addEventListener("click", async () => {
         title,
         estimatedMinutes: parseInt(taskMinutesInput.value) || null,
         dueDate: taskDueInput.value || null,
+        pinned: taskPinnedInput.checked,
       };
+      if (!taskDepsField.classList.contains("hidden")) {
+        body.dependsOn = [...taskDepsInput.selectedOptions].map(o => o.value);
+      }
       const updated = await api(`/tasks/${editingTaskId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -1310,6 +1428,8 @@ saveTaskBtn.addEventListener("click", async () => {
           title,
           estimatedMinutes: parseInt(taskMinutesInput.value) || 30,
           dueDate: taskDueInput.value || null,
+          pinned: taskPinnedInput.checked,
+          dependsOn: [...taskDepsInput.selectedOptions].map(o => o.value),
         }),
       });
       state.tasks.push(task);
@@ -1318,9 +1438,11 @@ saveTaskBtn.addEventListener("click", async () => {
     taskModal.classList.add("hidden");
     if (taskModalFromCalendar) {
       renderCalendar();
+      refreshPlanner();
     } else {
       renderTasks(state.tasks);
       renderEstimateBanner(state.tasks, state.currentProject);
+      refreshPlanner();
     }
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
@@ -1847,11 +1969,18 @@ profilePageBtn.addEventListener("click", async () => {
   // populate avatar
   const avatarRow = document.getElementById("profile-avatar-row");
   const authUser = auth.currentUser;
+  avatarRow.textContent = "";
   if (authUser?.photoURL) {
-    avatarRow.innerHTML = `<img src="${authUser.photoURL}" alt="Profile photo" class="profile-avatar-img" />`;
+    const img = document.createElement("img");
+    img.src = authUser.photoURL;
+    img.alt = "Profile photo";
+    img.className = "profile-avatar-img";
+    avatarRow.appendChild(img);
   } else {
-    const initials = (authUser?.displayName || authUser?.email || "?")[0].toUpperCase();
-    avatarRow.innerHTML = `<div class="profile-avatar-fallback">${initials}</div>`;
+    const div = document.createElement("div");
+    div.className = "profile-avatar-fallback";
+    div.textContent = (authUser?.displayName || authUser?.email || "?")[0].toUpperCase();
+    avatarRow.appendChild(div);
   }
 
   try {
@@ -2008,6 +2137,7 @@ progressBtn.addEventListener("click", async () => {
 
 async function loadProgress() {
   const termId = termSelect.value || state.currentTermId;
+  renderInsights(document.getElementById("insights-area"), termId);
   try {
     const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
     renderProgress(data.tasks);
@@ -2168,8 +2298,13 @@ calendarBtn.addEventListener("click", async () => {
 async function loadCalendar() {
   const termId = termSelect.value || state.currentTermId;
   try {
-    const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
+    const [data] = await Promise.all([
+      api(`/calendar${termId ? `?termId=${termId}` : ""}`),
+      loadForecast(termId).catch(() => null),
+    ]);
     calTasks = data.tasks;
+    setDeadlines(data.deadlines);
+    renderPlannerTop();
     renderCalendar();
     if (localStorage.getItem("margin_notif") === "1" &&
         !sessionStorage.getItem("margin_notif_fired")) {
@@ -2208,7 +2343,7 @@ function renderCalendar() {
   for (let i = 0; i < 7; i++) {
     const day = new Date(calWeekStart);
     day.setDate(day.getDate() + i);
-    const dayStr = day.toISOString().slice(0, 10);
+    const dayStr = toISODate(day);
     const isToday = day.getTime() === today.getTime();
 
     const dayTasks = calTasks
@@ -2253,6 +2388,7 @@ function renderCalendar() {
     header.appendChild(dayName);
     header.appendChild(dayNum);
     col.appendChild(header);
+    col.appendChild(buildDayInfo(dayStr));
 
     const tasksEl = document.createElement("div");
     tasksEl.className = "cal-tasks";
@@ -2311,6 +2447,7 @@ function buildCalTaskPill(task) {
       const stateIdx = state.tasks.findIndex(t => t.id === task.id);
       if (stateIdx !== -1) state.tasks[stateIdx] = updated;
       renderCalendar();
+      refreshPlanner();
     } catch (err) {
       console.error("failed to toggle task:", err);
     }
@@ -2355,6 +2492,7 @@ async function rescheduleTask(taskId, newDate) {
       method: "PATCH",
       body: JSON.stringify({ dueDate: newDate }),
     });
+    refreshPlanner();
   } catch (err) {
     console.error("failed to reschedule task:", err);
     // revert by reloading
@@ -2399,7 +2537,10 @@ let timer = {
   remaining: 0,
   running: false,
   intervalId: null,
+  startedAt: null,
 };
+const timerStopBtn  = document.getElementById("timer-stop-btn");
+const timerFollowUp = document.getElementById("timer-followup");
 
 function startTimerForTask(task) {
   // if a different task was running, stop it first
@@ -2411,8 +2552,10 @@ function startTimerForTask(task) {
   timer.remaining    = timer.totalSeconds;
   timer.running      = false;
   timer.intervalId   = null;
+  timer.startedAt    = null;
 
   timerDoneMsg.classList.add("hidden");
+  timerFollowUp.innerHTML = "";
   timerTaskName.textContent = task.title;
   timerStartBtn.textContent = "Start";
   timerPanel.classList.remove("hidden");
@@ -2455,6 +2598,10 @@ timerStartBtn.addEventListener("click", () => {
   } else {
     // start / resume
     timer.running = true;
+    timer.logged = false;
+    if (!timer.startedAt) timer.startedAt = new Date().toISOString();
+    timerDoneMsg.classList.add("hidden");
+    timerFollowUp.innerHTML = "";
     timer.intervalId = setInterval(() => {
       timer.remaining--;
       updateTimerDisplay();
@@ -2476,6 +2623,7 @@ timerResetBtn.addEventListener("click", () => {
   timer.intervalId = null;
   timer.running = false;
   timer.remaining = timer.totalSeconds;
+  timer.startedAt = null;
   timerDoneMsg.classList.add("hidden");
   updateTimerDisplay();
   updateTimerProgress();
@@ -2483,7 +2631,12 @@ timerResetBtn.addEventListener("click", () => {
   refreshTaskTimerBtns();
 });
 
-timerCloseBtn.addEventListener("click", () => {
+timerCloseBtn.addEventListener("click", async () => {
+  const elapsed = timer.logged ? 0 : Math.round((timer.totalSeconds - timer.remaining) / 60);
+  if (elapsed >= 1 && confirm(`Log the ${elapsed} min you studied before closing?`)) {
+    clearInterval(timer.intervalId);
+    await logTimerSession(elapsed);
+  }
   clearInterval(timer.intervalId);
   timer.intervalId = null;
   timer.running = false;
@@ -2493,59 +2646,52 @@ timerCloseBtn.addEventListener("click", () => {
 });
 
 async function onTimerComplete() {
-  const elapsedMinutes = Math.round((timer.totalSeconds - timer.remaining) / 60);
   timerStartBtn.textContent = "Start";
-  timerDoneMsg.classList.remove("hidden");
   refreshTaskTimerBtns();
+  await logTimerSession(Math.round(timer.totalSeconds / 60));
+}
 
-  // auto-log time to the task
-  if (timer.taskId && elapsedMinutes > 0) {
-    try {
-      const task = state.tasks.find(t => t.id === timer.taskId);
-      const existing = task?.timeSpent || 0;
-      const updated = await api(`/tasks/${timer.taskId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ timeSpent: existing + elapsedMinutes }),
-      });
-      const idx = state.tasks.findIndex(t => t.id === timer.taskId);
-      if (idx !== -1) {
-        state.tasks[idx] = updated;
-        const el = taskList.querySelector(`[data-task-id="${timer.taskId}"]`);
-        if (el) el.replaceWith(buildTaskItem(updated));
-        renderEstimateBanner(state.tasks, state.currentProject);
-      }
-    } catch (err) {
-      console.error("failed to log timer time:", err);
+// stop early and keep the minutes studied so far
+timerStopBtn.addEventListener("click", async () => {
+  const elapsed = Math.round((timer.totalSeconds - timer.remaining) / 60);
+  clearInterval(timer.intervalId);
+  timer.intervalId = null;
+  timer.running = false;
+  refreshTimerButtons();
+  refreshTaskTimerBtns();
+  if (elapsed < 1) { timerDoneMsg.textContent = "less than a minute — nothing logged"; timerDoneMsg.classList.remove("hidden"); return; }
+  await logTimerSession(elapsed);
+  timer.remaining = timer.totalSeconds;
+  updateTimerDisplay();
+  updateTimerProgress();
+});
+
+// record the session (adds the minutes to the task) and offer the optional follow-up
+async function logTimerSession(minutes) {
+  if (!timer.taskId || minutes <= 0) return;
+  const taskId = timer.taskId;
+  try {
+    const session = await logSession({
+      taskId, actualMinutes: minutes, plannedMinutes: Math.round(timer.totalSeconds / 60), startedAt: timer.startedAt,
+    });
+    timer.startedAt = null;
+    timer.logged = true;
+    timerDoneMsg.textContent = `${minutes} min logged 💛`;
+    timerDoneMsg.classList.remove("hidden");
+    const updated = session.task;
+    const idx = state.tasks.findIndex(t => t.id === taskId);
+    if (idx !== -1 && updated) {
+      state.tasks[idx] = updated;
+      const el = taskList.querySelector(`[data-task-id="${taskId}"]`);
+      if (el) el.replaceWith(buildTaskItem(updated));
+      renderEstimateBanner(state.tasks, state.currentProject);
     }
+    renderSessionFollowUp(timerFollowUp, session, { onTaskDone: () => nav.onStudyLogged?.() });
+    refreshPlanner();
+  } catch (err) {
+    timerDoneMsg.textContent = `couldn't log this session: ${err.message}`;
+    timerDoneMsg.classList.remove("hidden");
   }
-}
-
-
-// ---------------------------------------------------------------------------
-// date helpers
-// ---------------------------------------------------------------------------
-function formatDate(isoString) {
-  if (!isoString) return "";
-  // isoString might be "2026-05-15T00:00:00" or "2026-05-15"
-  const d = new Date(isoString);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function daysUntil(isoString) {
-  if (!isoString) return null;
-  const due = new Date(isoString);
-  due.setHours(0, 0, 0, 0);
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.round((due - now) / (1000 * 60 * 60 * 24));
-}
-
-function formatMinutes(mins) {
-  if (!mins) return "0min";
-  if (mins < 60) return `${Math.round(mins)}min`;
-  const h = Math.floor(mins / 60);
-  const m = Math.round(mins % 60);
-  return m > 0 ? `${h}h ${m}min` : `${h}h`;
 }
 
 

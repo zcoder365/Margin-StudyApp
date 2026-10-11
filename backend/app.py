@@ -1,47 +1,28 @@
 import os
-import re
-import base64
-import json
+import io
+import logging
 from datetime import datetime, timedelta
-from functools import wraps
 
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from google import genai
-import firebase_admin
-from firebase_admin import credentials, auth, firestore
+from firebase_admin import firestore
 
 load_dotenv()
 
+from core import (  # noqa: E402  (load_dotenv must run first)
+    get_db, user_doc, require_auth, serialize_timestamps, to_jsonable,
+    commit_in_chunks, stream_dicts, as_date, ai_allowed, ai_limited_response,
+)
+from ai import get_ai, AIError  # noqa: E402
+from services.documents import ASSESSMENT_KINDS, validate_review_fields, DocumentError  # noqa: E402
+from routes.documents import bp as documents_bp, store_document, delete_document_data  # noqa: E402
+from routes.planning import bp as planning_bp  # noqa: E402
+from routes.diagnostics import bp as diagnostics_bp  # noqa: E402
+from routes.feedback import bp as feedback_bp  # noqa: E402
 
-# -----------------------------------------------------------------------------
-# firebase admin SDK initialization
-# -----------------------------------------------------------------------------
-def init_firebase():
-    creds_value = os.environ.get("FIREBASE_CREDENTIALS")
-    if not creds_value:
-        raise RuntimeError("FIREBASE_CREDENTIALS env var is not set.")
-
-    if os.path.isfile(creds_value):
-        cred = credentials.Certificate(creds_value)
-    else:
-        try:
-            decoded = base64.b64decode(creds_value).decode("utf-8")
-            cred_dict = json.loads(decoded)
-            cred = credentials.Certificate(cred_dict)
-        except Exception as e:
-            raise RuntimeError(f"FIREBASE_CREDENTIALS is neither a valid file path nor valid base64 json: {e}")
-
-    firebase_admin.initialize_app(cred)
-
-
-init_firebase()
-db = firestore.client()
-
-# gemini client for pdf → task breakdown
-gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+log = logging.getLogger("margin")
 
 
 # -----------------------------------------------------------------------------
@@ -49,53 +30,22 @@ gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-do-not-use-in-prod")
+# uploads are capped at 10MB (plus multipart overhead); larger requests get a 413
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
 
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 
-# -----------------------------------------------------------------------------
-# auth decorator
-# -----------------------------------------------------------------------------
-def require_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "missing or malformed Authorization header"}), 401
-
-        id_token = auth_header.split("Bearer ", 1)[1].strip()
-
-        try:
-            decoded = auth.verify_id_token(id_token)
-            g.user_id = decoded["uid"]
-            g.user_email = decoded.get("email")
-        except auth.InvalidIdTokenError:
-            return jsonify({"error": "invalid id token"}), 401
-        except auth.ExpiredIdTokenError:
-            return jsonify({"error": "id token expired, please re-authenticate"}), 401
-        except Exception as e:
-            return jsonify({"error": f"auth failed: {str(e)}"}), 401
-
-        return f(*args, **kwargs)
-    return decorated
+app.register_blueprint(documents_bp)
+app.register_blueprint(planning_bp)
+app.register_blueprint(diagnostics_bp)
+app.register_blueprint(feedback_bp)
 
 
-# -----------------------------------------------------------------------------
-# helpers
-# -----------------------------------------------------------------------------
-def user_doc(user_id):
-    return db.collection("users").document(user_id)
-
-
-def serialize_timestamps(data, fields):
-    """convert firestore timestamp fields to ISO strings for JSON serialization."""
-    for field in fields:
-        if data.get(field):
-            val = data[field]
-            if hasattr(val, "isoformat"):
-                data[field] = val.isoformat()
-    return data
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"error": "file is too large — the limit is 10MB"}), 413
 
 
 # -----------------------------------------------------------------------------
@@ -158,7 +108,7 @@ def init_user():
             "user": user_snapshot.to_dict(),
         })
 
-    batch = db.batch()
+    batch = get_db().batch()
     body = request.get_json(silent=True) or {}
     display_name = body.get("displayName", "")
 
@@ -188,6 +138,43 @@ def init_user():
             "currentTermId": term_ref.id,
         },
     })
+
+
+# -----------------------------------------------------------------------------
+# cascading deletes
+# -----------------------------------------------------------------------------
+# collections whose documents carry a courseId and belong to exactly one course
+COURSE_SCOPED_COLLECTIONS = (
+    "objectives", "concepts", "questions", "attempts", "diagnosticSessions", "studySessions",
+)
+# per-course documents keyed by course id
+COURSE_KEYED_COLLECTIONS = ("conceptSuggestions",)
+
+
+def delete_project_data(uid, project_id):
+    ops = [("delete", d.reference, None)
+           for d in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream()]
+    ops.append(("delete", user_doc(uid).collection("projects").document(project_id), None))
+    commit_in_chunks(ops)
+
+
+def delete_course_data(uid, course_id):
+    """delete a course and everything that belongs to it (documents, diagnostics, history)."""
+    for p in user_doc(uid).collection("projects").where("courseId", "==", course_id).stream():
+        delete_project_data(uid, p.id)
+    for d in user_doc(uid).collection("documents").where("courseId", "==", course_id).stream():
+        delete_document_data(uid, d.id)
+    ops = []
+    for name in COURSE_SCOPED_COLLECTIONS:
+        ops += [("delete", d.reference, None)
+                for d in user_doc(uid).collection(name).where("courseId", "==", course_id).stream()]
+    for name in COURSE_KEYED_COLLECTIONS:
+        ops.append(("delete", user_doc(uid).collection(name).document(course_id), None))
+    grading = user_doc(uid).collection("courses").document(course_id)
+    ops += [("delete", d.reference, None) for d in grading.collection("grades").stream()]
+    ops.append(("delete", grading.collection("grading").document("scheme"), None))
+    ops.append(("delete", grading, None))
+    commit_in_chunks(ops)
 
 
 # -----------------------------------------------------------------------------
@@ -262,16 +249,10 @@ def update_term(term_id):
 def delete_term(term_id):
     uid = g.user_id
 
-    # cascade: delete all tasks, projects, and courses belonging to this term
+    # cascade: delete every course (and its data) belonging to this term
     courses = list(user_doc(uid).collection("courses").where("termId", "==", term_id).stream())
     for course_doc in courses:
-        cid = course_doc.id
-        projects = list(user_doc(uid).collection("projects").where("courseId", "==", cid).stream())
-        for project_doc in projects:
-            for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
-                task_doc.reference.delete()
-            project_doc.reference.delete()
-        course_doc.reference.delete()
+        delete_course_data(uid, course_doc.id)
 
     user_doc(uid).collection("terms").document(term_id).delete()
 
@@ -358,13 +339,9 @@ def update_course(course_id):
 @require_auth
 def delete_course(course_id):
     uid = g.user_id
-    projects = list(user_doc(uid).collection("projects").where("courseId", "==", course_id).stream())
-    for project_doc in projects:
-        for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
-            task_doc.reference.delete()
-        project_doc.reference.delete()
-
-    user_doc(uid).collection("courses").document(course_id).delete()
+    if not user_doc(uid).collection("courses").document(course_id).get().exists:
+        return jsonify({"error": "course not found"}), 404
+    delete_course_data(uid, course_id)
     return jsonify({"deleted": course_id})
 
 
@@ -383,10 +360,37 @@ def list_projects():
     for doc in projects_ref.stream():
         p = doc.to_dict()
         p["id"] = doc.id
-        serialize_timestamps(p, ["dueDate", "createdAt"])
-        projects.append(p)
+        if request.args.get("light") == "1":
+            p.pop("extractedText", None)
+        projects.append(to_jsonable(p))
 
     return jsonify({"projects": projects})
+
+
+@app.route("/api/projects/<project_id>", methods=["GET"])
+@require_auth
+def get_project(project_id):
+    snap = user_doc(g.user_id).collection("projects").document(project_id).get()
+    if not snap.exists:
+        return jsonify({"error": "project not found"}), 404
+    p = snap.to_dict()
+    p["id"] = project_id
+    return jsonify(to_jsonable(p))
+
+
+def assessment_field_updates(body):
+    """validate the optional assessment fields (kind, weight, estimatedHours) → (updates, error)."""
+    fields = {k: body[k] for k in ("kind", "weight", "estimatedHours") if k in body}
+    if not fields:
+        return {}, None
+    probe = {"title": "x", "kind": fields.get("kind", "other"), **{k: v for k, v in fields.items() if k != "kind"}}
+    clean, errors = validate_review_fields(probe)
+    if errors:
+        return None, "; ".join(errors)
+    updates = {k: clean[k] for k in fields}
+    if "estimatedHours" in fields:
+        updates["estimatedHoursOrigin"] = "student" if clean["estimatedHours"] is not None else None
+    return updates, None
 
 
 @app.route("/api/projects", methods=["POST"])
@@ -412,6 +416,10 @@ def create_project():
         except ValueError:
             return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
 
+    extra, err = assessment_field_updates(body)
+    if err:
+        return jsonify({"error": err}), 400
+
     project_ref = user_doc(g.user_id).collection("projects").document()
     project_data = {
         "courseId": course_id,
@@ -420,19 +428,15 @@ def create_project():
         "extractedText": None,
         "totalEstimatedMinutes": None,
         "status": "active",
+        "origin": "manual",
+        **extra,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
     project_ref.set(project_data)
 
-    return jsonify({
-        "id": project_ref.id,
-        "courseId": course_id,
-        "title": title,
-        "dueDate": due_date.isoformat() if due_date else None,
-        "status": "active",
-        "extractedText": None,
-        "totalEstimatedMinutes": None,
-    }), 201
+    row = {k: v for k, v in project_data.items() if k != "createdAt"}
+    row["id"] = project_ref.id
+    return jsonify(to_jsonable(row)), 201
 
 
 @app.route("/api/projects/<project_id>", methods=["PATCH"])
@@ -459,29 +463,69 @@ def update_project(project_id):
             updates["completedAt"] = firestore.SERVER_TIMESTAMP
         else:
             updates["completedAt"] = None
+    extra, err = assessment_field_updates(body)
+    if err:
+        return jsonify({"error": err}), 400
+    updates.update(extra)
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
 
     project_ref.update(updates)
     fresh = project_ref.get().to_dict()
     fresh["id"] = project_id
-    serialize_timestamps(fresh, ["dueDate", "createdAt", "completedAt"])
-    return jsonify(fresh)
+    return jsonify(to_jsonable(fresh))
 
 
 @app.route("/api/projects/<project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id):
     uid = g.user_id
-    for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream():
-        task_doc.reference.delete()
-    user_doc(uid).collection("projects").document(project_id).delete()
+    if not user_doc(uid).collection("projects").document(project_id).get().exists:
+        return jsonify({"error": "project not found"}), 404
+    delete_project_data(uid, project_id)
     return jsonify({"deleted": project_id})
 
 
 # -----------------------------------------------------------------------------
-# pdf upload + claude task breakdown
+# pdf upload + ai task breakdown
 # -----------------------------------------------------------------------------
+TASK_BREAKDOWN_PROMPT = (
+    "You are a study assistant. Given the following assignment text, "
+    "break it down into a list of specific, actionable tasks a student needs to complete. "
+    "For each task, estimate how many minutes it will take.\n\n"
+    "Respond with ONLY a JSON array. Each element must have:\n"
+    "  \"title\": short task description (max 80 chars)\n"
+    "  \"estimatedMinutes\": integer\n\n"
+    "Assignment text:\n"
+)
+
+
+def normalize_task_breakdown(raw):
+    """validate the model's task list; drop malformed entries instead of trusting them."""
+    if isinstance(raw, dict):
+        raw = raw.get("tasks", [])
+    if not isinstance(raw, list):
+        return []
+    tasks = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:120]
+        if not title:
+            continue
+        est = item.get("estimatedMinutes")
+        if not isinstance(est, (int, float)) or est <= 0:
+            est = 30
+        tasks.append({"title": title, "estimatedMinutes": int(min(est, 600))})
+    return tasks[:40]
+
+
+def read_pdf_pages(pdf_bytes):
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return [page.extract_text() or "" for page in reader.pages]
+
+
 @app.route("/api/projects/<project_id>/upload", methods=["POST"])
 @require_auth
 def upload_assignment_pdf(project_id):
@@ -497,63 +541,70 @@ def upload_assignment_pdf(project_id):
 
     pdf_file = request.files["pdf"]
     pdf_bytes = pdf_file.read()
-
-    # extract text with pypdf — no AI needed for now
-    import io
-    from pypdf import PdfReader
+    if not pdf_bytes.startswith(b"%PDF-"):
+        return jsonify({"error": "that file doesn't look like a PDF"}), 400
 
     try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        pages = [page.extract_text() or "" for page in reader.pages]
+        pages = read_pdf_pages(pdf_bytes)
         extracted_text = "\n\n".join(pages).strip()
-    except Exception as e:
-        return jsonify({"error": f"could not read pdf: {str(e)}"}), 500
+    except Exception:
+        return jsonify({"error": "could not read that PDF — it may be encrypted or damaged"}), 400
+
+    # keep the original file so it can be viewed again later and processed for requirements
+    course_id = project_data.get("courseId")
+    course_snap = user_doc(g.user_id).collection("courses").document(course_id).get()
+    document_id = None
+    if course_snap.exists:
+        try:
+            document_id, _ = store_document(
+                g.user_id, course_snap.to_dict(), course_id, pdf_bytes, pdf_file.filename,
+                "pdf", "assignment", assessment_id=project_id)
+        except DocumentError:
+            document_id = None
+        old_id = project_data.get("documentId")
+        if document_id and old_id:
+            old = user_doc(g.user_id).collection("documents").document(old_id).get()
+            # replace the previous upload unless the student already reviewed it
+            if old.exists and old.to_dict().get("status") == "stored":
+                delete_document_data(g.user_id, old_id)
 
     total_estimated = 0
     raw_tasks = []
+    warning = None
 
-    if extracted_text:
+    if extracted_text and not ai_allowed(g.user_id, "tasks"):
+        extracted_text_for_ai = None
+        warning = "you've hit the hourly limit for AI features — the PDF was saved, but tasks weren't generated"
+    else:
+        extracted_text_for_ai = extracted_text
+
+    if extracted_text_for_ai:
         try:
-            response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=(
-                    "You are a study assistant. Given the following assignment text, "
-                    "break it down into a list of specific, actionable tasks a student needs to complete. "
-                    "For each task, estimate how many minutes it will take.\n\n"
-                    "Respond with ONLY a JSON array. Each element must have:\n"
-                    "  \"title\": short task description (max 80 chars)\n"
-                    "  \"estimatedMinutes\": integer\n\n"
-                    "Assignment text:\n" + extracted_text[:12000]
-                ),
-            )
-            import json as _json
-            text_content = response.text.strip()
-            if text_content.startswith("```"):
-                text_content = text_content.split("```")[1]
-                if text_content.startswith("json"):
-                    text_content = text_content[4:]
-            raw_tasks = _json.loads(text_content.strip())
-            total_estimated = sum(t.get("estimatedMinutes", 30) for t in raw_tasks)
-        except Exception as e:
-            print(f"Gemini task generation failed: {e}")
-            raw_tasks = []
+            raw_tasks = normalize_task_breakdown(get_ai().generate_json(TASK_BREAKDOWN_PROMPT + extracted_text[:12000]))
+            if not raw_tasks:
+                warning = "the AI didn't return any usable tasks — your existing tasks were kept"
+        except AIError as e:
+            log.warning("task generation failed: %s", e.kind)
+            warning = f"couldn't generate tasks ({e}) — your existing tasks were kept"
+        total_estimated = sum(t["estimatedMinutes"] for t in raw_tasks)
+    elif not extracted_text:
+        warning = "no text could be read from this PDF (it may be scanned) — no tasks were generated"
 
-    # delete any existing ai-generated tasks for this project before adding new ones
-    existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).where("aiGenerated", "==", True).stream()
-    delete_batch = db.batch()
-    for doc in existing_tasks:
-        delete_batch.delete(doc.reference)
-    delete_batch.commit()
-
-    # save extracted text + estimate to project
-    project_ref.update({
-        "extractedText": extracted_text,
-        "totalEstimatedMinutes": total_estimated,
-    })
+    batch = get_db().batch()
+    project_updates = {"extractedText": extracted_text}
+    if document_id:
+        project_updates["documentId"] = document_id
+    if raw_tasks:
+        project_updates["totalEstimatedMinutes"] = total_estimated
+        # replace the previous ai-generated tasks only once new ones exist; completed ones are kept
+        existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).stream()
+        for doc in existing_tasks:
+            d = doc.to_dict()
+            if d.get("aiGenerated") and d.get("status") != "done":
+                batch.delete(doc.reference)
+    batch.update(project_ref, project_updates)
 
     # create tasks in firestore
-    course_id = project_data.get("courseId")
-    create_batch = db.batch()
     created_tasks = []
 
     for i, task in enumerate(raw_tasks):
@@ -561,8 +612,8 @@ def upload_assignment_pdf(project_id):
         task_data = {
             "projectId": project_id,
             "courseId": course_id,
-            "title": task.get("title", f"Task {i + 1}"),
-            "estimatedMinutes": task.get("estimatedMinutes", 30),
+            "title": task["title"],
+            "estimatedMinutes": task["estimatedMinutes"],
             "timeSpent": None,
             "status": "pending",
             "dueDate": datetime.fromisoformat(datetime.utcnow().date().isoformat()),
@@ -575,18 +626,30 @@ def upload_assignment_pdf(project_id):
             "order": i,
             "createdAt": firestore.SERVER_TIMESTAMP,
         }
-        create_batch.set(task_ref, task_data)
+        batch.set(task_ref, task_data)
         row = {k: v for k, v in task_data.items() if k != "createdAt"}
         row["id"] = task_ref.id
         row["dueDate"] = task_data["dueDate"].isoformat()
         created_tasks.append(row)
 
-    create_batch.commit()
+    batch.commit()
+
+    # return the full task list so the client stays in sync when tasks were kept
+    tasks = []
+    for doc in user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).stream():
+        t = doc.to_dict()
+        t["id"] = doc.id
+        serialize_timestamps(t, ["dueDate", "scheduledDate", "originalScheduledDate", "completedAt", "createdAt"])
+        tasks.append(t)
+    tasks.sort(key=lambda t: t.get("order", 0))
 
     return jsonify({
-        "tasks": created_tasks,
+        "tasks": tasks,
+        "createdTasks": created_tasks,
         "extractedText": extracted_text,
-        "totalEstimatedMinutes": total_estimated,
+        "totalEstimatedMinutes": total_estimated if raw_tasks else project_data.get("totalEstimatedMinutes"),
+        "documentId": document_id,
+        "warning": warning,
     }), 201
 
 
@@ -649,12 +712,19 @@ def add_grade(course_id):
     if score is None or total is None:
         return jsonify({"error": "score and total are required"}), 400
 
+    try:
+        score, total = float(score), float(total)
+    except (TypeError, ValueError):
+        return jsonify({"error": "score and total must be numbers"}), 400
+    if total <= 0:
+        return jsonify({"error": "total must be greater than 0"}), 400
+
     grade_ref = course_ref.collection("grades").document()
     grade_data = {
         "categoryId": category_id,
         "name": name,
-        "score": float(score),
-        "total": float(total),
+        "score": score,
+        "total": total,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
     grade_ref.set(grade_data)
@@ -678,10 +748,13 @@ def update_grade(course_id, grade_id):
     updates = {}
     if "name" in body:
         updates["name"] = body["name"].strip()
-    if "score" in body:
-        updates["score"] = float(body["score"])
-    if "total" in body:
-        updates["total"] = float(body["total"])
+    try:
+        if "score" in body:
+            updates["score"] = float(body["score"])
+        if "total" in body:
+            updates["total"] = float(body["total"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "score and total must be numbers"}), 400
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
 
@@ -707,6 +780,36 @@ def delete_grade(course_id, grade_id):
 # -----------------------------------------------------------------------------
 # tasks
 # -----------------------------------------------------------------------------
+def validate_dependencies(uid, project_id, task_id, depends_on):
+    """dependsOn must list other tasks of the same assessment without creating a loop."""
+    if not isinstance(depends_on, list) or len(depends_on) > 20 or not all(isinstance(x, str) for x in depends_on):
+        return None, "dependsOn must be a list of task ids"
+    deps = list(dict.fromkeys(depends_on))
+    if task_id in deps:
+        return None, "a task can't depend on itself"
+    siblings = {d["id"]: d for d in stream_dicts(user_doc(uid).collection("tasks").where("projectId", "==", project_id))}
+    if any(d not in siblings for d in deps):
+        return None, "dependencies must be tasks from the same assessment"
+    graph = {tid: list(t.get("dependsOn") or []) for tid, t in siblings.items()}
+    if task_id:
+        graph[task_id] = deps
+
+    def reaches(start, target):
+        stack, seen = [start], set()
+        while stack:
+            node = stack.pop()
+            if node == target:
+                return True
+            if node not in seen:
+                seen.add(node)
+                stack.extend(graph.get(node, []))
+        return False
+
+    if task_id and any(reaches(d, task_id) for d in deps):
+        return None, "that would create a loop of dependencies"
+    return deps, None
+
+
 @app.route("/api/tasks", methods=["GET"])
 @require_auth
 def list_tasks():
@@ -759,10 +862,18 @@ def create_task():
     except ValueError:
         return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
 
+    depends_on = []
+    if body.get("dependsOn"):
+        depends_on, err = validate_dependencies(g.user_id, project_id, None, body["dependsOn"])
+        if err:
+            return jsonify({"error": err}), 400
+
     task_data = {
         "projectId": project_id,
         "courseId": course_id,
         "title": title,
+        "dependsOn": depends_on,
+        "pinned": bool(body.get("pinned", False)),
         "estimatedMinutes": body.get("estimatedMinutes", 30),
         "timeSpent": None,
         "status": "pending",
@@ -845,6 +956,15 @@ def update_task(task_id):
     if "scheduledBlockId" in body:
         updates["scheduledBlockId"] = body["scheduledBlockId"]
 
+    if "pinned" in body:
+        updates["pinned"] = bool(body["pinned"])
+
+    if "dependsOn" in body:
+        deps, err = validate_dependencies(g.user_id, current_data.get("projectId"), task_id, body["dependsOn"] or [])
+        if err:
+            return jsonify({"error": err}), 400
+        updates["dependsOn"] = deps
+
     if not updates:
         return jsonify({"error": "no valid fields to update"}), 400
 
@@ -918,7 +1038,8 @@ def auto_schedule(project_id):
         .stream()
     )
     tasks = [{"id": doc.id, **doc.to_dict()} for doc in tasks_snap]
-    pending = [t for t in tasks if t.get("status") != "done"]
+    # fixed ("pinned") tasks keep their day
+    pending = [t for t in tasks if t.get("status") != "done" and not t.get("pinned")]
 
     if not pending:
         return jsonify({"tasks": [], "message": "no pending tasks to schedule"})
@@ -968,7 +1089,7 @@ def auto_schedule(project_id):
     current_day, current_free = next(day_iter)
     current_capacity = current_free * MINUTES_PER_FREE_HOUR
 
-    batch = db.batch()
+    batch = get_db().batch()
     updated_tasks = []
 
     for task in pending:
@@ -1012,7 +1133,7 @@ def get_calendar():
         user_snap = user_doc(uid).get()
         term_id = user_snap.to_dict().get("currentTermId") if user_snap.exists else None
     if not term_id:
-        return jsonify({"tasks": []})
+        return jsonify({"tasks": [], "deadlines": []})
 
     # courses for this term
     courses = {}
@@ -1036,10 +1157,24 @@ def get_calendar():
             t["courseName"] = course.get("name", "")
             t["courseColor"] = course.get("color", "#ccc")
             t["projectTitle"] = project.get("title", "")
-            serialize_timestamps(t, ["dueDate", "createdAt"])
-            result.append(t)
+            result.append(to_jsonable(t))
 
-    return jsonify({"tasks": result})
+    # assessment deadlines and milestones (confirmed data only) for the planner
+    deadlines = []
+    for project_id, project in projects.items():
+        course = courses[project["courseId"]]
+        base = {"projectId": project_id, "courseId": project["courseId"], "courseName": course.get("name", ""),
+                "courseColor": course.get("color", "#ccc"), "projectTitle": project.get("title", ""),
+                "kind": project.get("kind"), "status": project.get("status", "active")}
+        due = as_date(project.get("dueDate"))
+        if due:
+            deadlines.append({**base, "type": "deadline", "title": project.get("title", ""), "date": due.isoformat()})
+        for m in project.get("milestones") or []:
+            md = as_date(m.get("dueDate"))
+            if md:
+                deadlines.append({**base, "type": "milestone", "title": m.get("title", ""), "date": md.isoformat()})
+
+    return jsonify({"tasks": result, "deadlines": deadlines})
 
 
 # -----------------------------------------------------------------------------
@@ -1047,4 +1182,6 @@ def get_calendar():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # the werkzeug debugger allows code execution, so only enable it explicitly for local dev
+    debug = os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development"
+    app.run(host="0.0.0.0", port=port, debug=debug)

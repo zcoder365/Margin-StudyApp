@@ -50,7 +50,7 @@
         </div>
 
         <!-- calendar -->
-        <button id="calendar-btn" class="btn btn-ghost" title="task calendar">Calendar</button>
+        <button id="calendar-btn" class="btn btn-ghost" title="planner: forecast and weekly calendar">Planner</button>
 
         <!-- progress -->
         <button id="progress-btn" class="btn btn-ghost" title="term progress">Progress</button>
@@ -84,7 +84,7 @@
       <div class="mobile-nav-term">
         <select id="mobile-term-select" class="term-select"></select>
       </div>
-      <button id="mobile-calendar-btn" class="mobile-nav-item">Calendar</button>
+      <button id="mobile-calendar-btn" class="mobile-nav-item">Planner</button>
       <button id="mobile-progress-btn" class="mobile-nav-item">Progress</button>
       <button id="mobile-schedule-btn" class="mobile-nav-item">Schedule</button>
       <div class="mobile-nav-divider"></div>
@@ -96,6 +96,7 @@
 
       <!-- ── home (terms grid) ── -->
       <div id="view-home">
+        <div id="home-overview" class="home-overview"></div>
         <div class="section-header">
           <h2>Your terms</h2>
           <button id="add-term-btn" class="btn btn-primary">+ Add term</button>
@@ -105,12 +106,12 @@
             <div id="onboarding-card" class="onboarding-card hidden">
               <img src="favicon.svg" class="onboarding-mark" alt="" />
               <h2 class="onboarding-title">welcome to margin 💛</h2>
-              <p class="onboarding-desc">margin helps you break down assignments, schedule your study sessions, and stay on top of your courses — all in one place.</p>
+              <p class="onboarding-desc">margin helps you see what you need to do, what you actually understand, and whether you have enough time to prepare — before it's too late to adjust.</p>
               <ol class="onboarding-steps">
-                <li>Create a <strong>term</strong> (e.g. Fall 2026)</li>
-                <li>Add your <strong>courses</strong></li>
-                <li>Upload an <strong>assignment PDF</strong> — margin will generate tasks for you using AI</li>
-                <li>Let margin <strong>auto-schedule</strong> your tasks around your weekly commitments</li>
+                <li>Create a <strong>term</strong> (e.g. Fall 2026) and add your <strong>courses</strong></li>
+                <li>Upload each <strong>syllabus</strong> — review and confirm the deadlines and weights margin finds</li>
+                <li>Add your <strong>weekly commitments</strong> so the planner knows your real free time</li>
+                <li>Run short <strong>diagnostics</strong> to find what to practise before each exam</li>
               </ol>
               <button id="onboarding-start-btn" class="btn btn-primary btn-lg">Create your first term →</button>
             </div>
@@ -124,20 +125,25 @@
         <div class="section-header">
           <h2>Progress</h2>
         </div>
+        <div id="insights-area" class="insights-area"></div>
+        <h3 class="sub-section-title">Tasks and time by course</h3>
         <div id="progress-grid" class="progress-grid"></div>
       </div>
 
       <!-- ── calendar ── -->
       <div id="view-calendar" class="hidden">
         <div class="section-header">
-          <h2 id="cal-heading">Calendar</h2>
+          <h2 id="cal-heading">Planner</h2>
+        </div>
+        <div id="planner-top" class="planner-top"></div>
+        <div class="cal-week-bar">
+          <div id="cal-week-label" class="cal-week-label"></div>
           <div class="cal-controls">
-            <button id="cal-prev-btn" class="btn btn-ghost btn-sm">‹ Prev</button>
+            <button id="cal-prev-btn" class="btn btn-ghost btn-sm" aria-label="previous week">‹ Prev</button>
             <button id="cal-today-btn" class="btn btn-ghost btn-sm">Today</button>
-            <button id="cal-next-btn" class="btn btn-ghost btn-sm">Next ›</button>
+            <button id="cal-next-btn" class="btn btn-ghost btn-sm" aria-label="next week">Next ›</button>
           </div>
         </div>
-        <div id="cal-week-label" class="cal-week-label"></div>
         <div id="cal-grid" class="cal-grid"></div>
       </div>
 
@@ -222,13 +228,24 @@
           <h2 id="course-title">Course</h2>
           <div class="header-actions">
             <button id="grade-calc-btn" class="btn btn-ghost">Grade calculator</button>
-            <button id="add-assignment-btn" class="btn btn-primary">+ Add assignment</button>
+            <button id="add-assignment-btn" class="btn btn-primary">+ Add assessment</button>
           </div>
         </div>
-        <div id="assignments-list" class="assignments-list">
-          <p id="assignments-empty" class="empty-state">No assignments yet. Add one to get started 💛</p>
+        <div id="course-tabs" class="tab-bar" aria-label="course sections"></div>
+        <div id="course-panel-assessments" role="tabpanel" aria-labelledby="tab-assessments">
+          <div id="assignments-list" class="assignments-list">
+            <p id="assignments-empty" class="empty-state">No assessments yet. Add one, or upload your syllabus under Documents 💛</p>
+          </div>
         </div>
+        <div id="course-panel-documents" role="tabpanel" aria-labelledby="tab-documents" class="hidden"></div>
+        <div id="course-panel-practice" role="tabpanel" aria-labelledby="tab-practice" class="hidden"></div>
       </div>
+
+      <!-- ── document review ── -->
+      <div id="view-review" class="hidden"></div>
+
+      <!-- ── diagnostic session ── -->
+      <div id="view-diagnostic" class="hidden"></div>
 
       <!-- ── grade calculator ── -->
       <div id="view-grades" class="hidden">
@@ -269,6 +286,8 @@
             <button id="auto-schedule-btn" class="btn btn-ghost">Auto-schedule</button>
           </div>
         </div>
+
+        <div id="assessment-overview" class="assessment-overview hidden"></div>
 
         <div id="estimate-banner" class="estimate-banner hidden">
           <span id="estimate-text"></span>
@@ -333,12 +352,26 @@
   <div id="assignment-modal" class="modal hidden" role="dialog" aria-modal="true">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Add an assignment</h3>
-        <button class="modal-close" id="cancel-assignment-btn">✕</button>
+        <h3>Add an assessment</h3>
+        <button class="modal-close" id="cancel-assignment-btn" aria-label="close">✕</button>
       </div>
       <div class="modal-body">
         <label>Title <input type="text" id="assignment-title-input" placeholder="e.g. Problem Set 3" /></label>
+        <label>Type
+          <select id="assignment-kind-input">
+            <option value="assignment">Assignment</option>
+            <option value="exam">Exam</option>
+            <option value="quiz">Quiz</option>
+            <option value="project">Project</option>
+            <option value="lab">Lab</option>
+            <option value="presentation">Presentation</option>
+            <option value="participation">Participation</option>
+            <option value="other">Other</option>
+          </select>
+        </label>
         <label>Due date <input type="date" id="assignment-due-input" /></label>
+        <label>Grade weight (%) <span class="muted small">optional</span> <input type="number" id="assignment-weight-input" min="0" max="100" step="0.5" placeholder="unknown" /></label>
+        <label>Expected workload (hours) <span class="muted small">optional — used to plan exams and anything without tasks</span> <input type="number" id="assignment-hours-input" min="0" max="500" step="0.5" placeholder="unknown" /></label>
       </div>
       <div class="modal-footer">
         <button id="save-assignment-btn" class="btn btn-primary">Save</button>
@@ -355,7 +388,11 @@
       <div class="modal-body">
         <label>Description <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" /></label>
         <label>Estimated time (min) <input type="number" id="task-minutes-input" min="1" placeholder="30" /></label>
-        <label>Due date <input type="date" id="task-due-input" /></label>
+        <label>Planned for <input type="date" id="task-due-input" /></label>
+        <label class="toggle-row"><input type="checkbox" id="task-pinned-input" /> <span class="toggle-label">Fixed — don't move this when rebuilding my plan</span></label>
+        <label id="task-deps-field">Do after <span class="muted small">(optional — hold Ctrl/⌘ to pick several)</span>
+          <select id="task-deps-input" multiple size="4"></select>
+        </label>
       </div>
       <div class="modal-footer">
         <button id="save-task-btn" class="btn btn-primary">Save</button>
@@ -428,9 +465,11 @@
     </div>
     <div class="timer-controls">
       <button id="timer-start-btn" class="btn btn-primary btn-sm">Start</button>
+      <button id="timer-stop-btn" class="btn btn-ghost btn-sm" title="stop now and log the minutes so far">Stop &amp; log</button>
       <button id="timer-reset-btn" class="btn btn-ghost btn-sm">Reset</button>
     </div>
-    <div id="timer-done-msg" class="timer-done-msg hidden">session complete — time logged 💛</div>
+    <div id="timer-done-msg" class="timer-done-msg hidden" role="status">session complete — time logged 💛</div>
+    <div id="timer-followup" class="timer-followup"></div>
   </div>
 
   <!-- keyboard shortcuts overlay -->

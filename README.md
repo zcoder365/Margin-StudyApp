@@ -39,6 +39,16 @@ most planners assume infinite time. margin starts with the time you actually hav
 - only confirmed items reach your courses and planner; the original file is kept and viewable
 - assignment PDFs uploaded on an assignment page are now stored too, so they're still there after a reload
 
+### planner: workload forecast & schedule recovery
+
+- the planner shows how much free study time you have in the next two weeks (your study window minus recurring commitments, within your daily limit), how much work is due in that time, and what share of your free time it needs
+- every assessment gets an explicitly defined label — **on track**, **tight**, **at risk** or **not enough info** — with the numbers behind it (work left, free time before the deadline, time needed for earlier deadlines)
+- risks are flagged with a reason: work that doesn't fit, tasks that should start today, overbooked days, missed tasks, tasks moved 3+ times, crunch weeks, an empty weekly schedule, or estimates your history says are optimistic. dismiss any of them; they come back only if the numbers change
+- **"I'm behind — rebuild my plan"** proposes a realistic new schedule: missed and overbooked tasks move to the earliest days with room, long tasks are split into sessions, dependencies ("do after") and fixed tasks are respected, completed work never moves, and anything that can't fit before its deadline is reported with options instead of being pushed past it. you pick which changes to apply, and can undo them
+- study availability settings: study window, max hours per day, longest session, days off, and unavailable dates (trips, busy weeks)
+- optional estimate adjustment: after at least 5 finished tasks with logged time, margin can scale estimates by how long your tasks really take (shrunk toward 1× so a few tasks can't swing it)
+- assessment deadlines and milestones appear on the calendar; each day shows planned vs. free time
+
 ### calendar
 
 - weekly calendar view of all tasks across every course, color-coded by course

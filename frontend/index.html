@@ -50,7 +50,7 @@
         </div>
 
         <!-- calendar -->
-        <button id="calendar-btn" class="btn btn-ghost" title="task calendar">Calendar</button>
+        <button id="calendar-btn" class="btn btn-ghost" title="planner: forecast and weekly calendar">Planner</button>
 
         <!-- progress -->
         <button id="progress-btn" class="btn btn-ghost" title="term progress">Progress</button>
@@ -84,7 +84,7 @@
       <div class="mobile-nav-term">
         <select id="mobile-term-select" class="term-select"></select>
       </div>
-      <button id="mobile-calendar-btn" class="mobile-nav-item">Calendar</button>
+      <button id="mobile-calendar-btn" class="mobile-nav-item">Planner</button>
       <button id="mobile-progress-btn" class="mobile-nav-item">Progress</button>
       <button id="mobile-schedule-btn" class="mobile-nav-item">Schedule</button>
       <div class="mobile-nav-divider"></div>
@@ -130,14 +130,17 @@
       <!-- ── calendar ── -->
       <div id="view-calendar" class="hidden">
         <div class="section-header">
-          <h2 id="cal-heading">Calendar</h2>
+          <h2 id="cal-heading">Planner</h2>
+        </div>
+        <div id="planner-top" class="planner-top"></div>
+        <div class="cal-week-bar">
+          <div id="cal-week-label" class="cal-week-label"></div>
           <div class="cal-controls">
-            <button id="cal-prev-btn" class="btn btn-ghost btn-sm">‹ Prev</button>
+            <button id="cal-prev-btn" class="btn btn-ghost btn-sm" aria-label="previous week">‹ Prev</button>
             <button id="cal-today-btn" class="btn btn-ghost btn-sm">Today</button>
-            <button id="cal-next-btn" class="btn btn-ghost btn-sm">Next ›</button>
+            <button id="cal-next-btn" class="btn btn-ghost btn-sm" aria-label="next week">Next ›</button>
           </div>
         </div>
-        <div id="cal-week-label" class="cal-week-label"></div>
         <div id="cal-grid" class="cal-grid"></div>
       </div>
 
@@ -379,7 +382,11 @@
       <div class="modal-body">
         <label>Description <input type="text" id="task-title-input" placeholder="e.g. Complete problem 2a–2c" /></label>
         <label>Estimated time (min) <input type="number" id="task-minutes-input" min="1" placeholder="30" /></label>
-        <label>Due date <input type="date" id="task-due-input" /></label>
+        <label>Planned for <input type="date" id="task-due-input" /></label>
+        <label class="toggle-row"><input type="checkbox" id="task-pinned-input" /> <span class="toggle-label">Fixed — don't move this when rebuilding my plan</span></label>
+        <label id="task-deps-field">Do after <span class="muted small">(optional — hold Ctrl/⌘ to pick several)</span>
+          <select id="task-deps-input" multiple size="4"></select>
+        </label>
       </div>
       <div class="modal-footer">
         <button id="save-task-btn" class="btn btn-primary">Save</button>

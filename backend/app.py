@@ -18,6 +18,7 @@ from core import (  # noqa: E402  (load_dotenv must run first)
 from ai import get_ai, AIError  # noqa: E402
 from services.documents import ASSESSMENT_KINDS, validate_review_fields, DocumentError  # noqa: E402
 from routes.documents import bp as documents_bp, store_document, delete_document_data  # noqa: E402
+from routes.planning import bp as planning_bp  # noqa: E402
 
 log = logging.getLogger("margin")
 
@@ -35,6 +36,7 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credenti
 
 
 app.register_blueprint(documents_bp)
+app.register_blueprint(planning_bp)
 
 
 @app.errorhandler(413)
@@ -764,6 +766,36 @@ def delete_grade(course_id, grade_id):
 # -----------------------------------------------------------------------------
 # tasks
 # -----------------------------------------------------------------------------
+def validate_dependencies(uid, project_id, task_id, depends_on):
+    """dependsOn must list other tasks of the same assessment without creating a loop."""
+    if not isinstance(depends_on, list) or len(depends_on) > 20 or not all(isinstance(x, str) for x in depends_on):
+        return None, "dependsOn must be a list of task ids"
+    deps = list(dict.fromkeys(depends_on))
+    if task_id in deps:
+        return None, "a task can't depend on itself"
+    siblings = {d["id"]: d for d in stream_dicts(user_doc(uid).collection("tasks").where("projectId", "==", project_id))}
+    if any(d not in siblings for d in deps):
+        return None, "dependencies must be tasks from the same assessment"
+    graph = {tid: list(t.get("dependsOn") or []) for tid, t in siblings.items()}
+    if task_id:
+        graph[task_id] = deps
+
+    def reaches(start, target):
+        stack, seen = [start], set()
+        while stack:
+            node = stack.pop()
+            if node == target:
+                return True
+            if node not in seen:
+                seen.add(node)
+                stack.extend(graph.get(node, []))
+        return False
+
+    if task_id and any(reaches(d, task_id) for d in deps):
+        return None, "that would create a loop of dependencies"
+    return deps, None
+
+
 @app.route("/api/tasks", methods=["GET"])
 @require_auth
 def list_tasks():
@@ -816,10 +848,18 @@ def create_task():
     except ValueError:
         return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
 
+    depends_on = []
+    if body.get("dependsOn"):
+        depends_on, err = validate_dependencies(g.user_id, project_id, None, body["dependsOn"])
+        if err:
+            return jsonify({"error": err}), 400
+
     task_data = {
         "projectId": project_id,
         "courseId": course_id,
         "title": title,
+        "dependsOn": depends_on,
+        "pinned": bool(body.get("pinned", False)),
         "estimatedMinutes": body.get("estimatedMinutes", 30),
         "timeSpent": None,
         "status": "pending",
@@ -902,6 +942,15 @@ def update_task(task_id):
     if "scheduledBlockId" in body:
         updates["scheduledBlockId"] = body["scheduledBlockId"]
 
+    if "pinned" in body:
+        updates["pinned"] = bool(body["pinned"])
+
+    if "dependsOn" in body:
+        deps, err = validate_dependencies(g.user_id, current_data.get("projectId"), task_id, body["dependsOn"] or [])
+        if err:
+            return jsonify({"error": err}), 400
+        updates["dependsOn"] = deps
+
     if not updates:
         return jsonify({"error": "no valid fields to update"}), 400
 
@@ -975,7 +1024,8 @@ def auto_schedule(project_id):
         .stream()
     )
     tasks = [{"id": doc.id, **doc.to_dict()} for doc in tasks_snap]
-    pending = [t for t in tasks if t.get("status") != "done"]
+    # fixed ("pinned") tasks keep their day
+    pending = [t for t in tasks if t.get("status") != "done" and not t.get("pinned")]
 
     if not pending:
         return jsonify({"tasks": [], "message": "no pending tasks to schedule"})

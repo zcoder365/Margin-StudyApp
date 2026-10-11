@@ -16,6 +16,7 @@ import {
 } from "./core.js";
 import { renderCourseDocuments, stopDocumentPolling } from "./documents.js";
 import { renderAssessmentOverview, loadStoredPdf } from "./assessment.js";
+import { loadForecast, renderPlannerTop, buildDayInfo, setDeadlines, refreshPlanner } from "./planner.js";
 
 
 // ---------------------------------------------------------------------------
@@ -172,6 +173,12 @@ function showView(name) {
 
 // bridge for the feature modules
 nav.showView = showView;
+nav.reloadCalendar = () => loadCalendar();
+nav.rerenderCalendar = () => renderCalendar();
+nav.refreshAfterPlanChange = () => refreshPlanner(true);
+nav.onForecastChanged = () => {
+  if (!viewAssignment.classList.contains("hidden") && state.currentProject) renderAssessmentOverview(state.currentProject);
+};
 nav.state = state;
 nav.openCourse = (course, tab) => openCourse(course, tab);
 nav.openAssignmentById = async (projectId) => {
@@ -1137,11 +1144,12 @@ autoScheduleBtn.addEventListener("click", async () => {
     state.tasks = result.tasks;
     renderTasks(result.tasks);
     renderEstimateBanner(result.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     alert(`auto-schedule failed: ${err.message}`);
   } finally {
     autoScheduleBtn.disabled = false;
-    autoScheduleBtn.textContent = "🗓 auto-schedule tasks";
+    autoScheduleBtn.textContent = "Auto-schedule";
   }
 });
 
@@ -1257,6 +1265,7 @@ async function deleteTask(task) {
     state.tasks = state.tasks.filter(t => t.id !== task.id);
     renderTasks(state.tasks);
     renderEstimateBanner(state.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     alert(`couldn't delete: ${err.message}`);
   }
@@ -1276,6 +1285,7 @@ async function toggleTaskDone(task) {
     const el = taskList.querySelector(`[data-task-id="${task.id}"]`);
     if (el) el.replaceWith(buildTaskItem(updated));
     renderEstimateBanner(state.tasks, state.currentProject);
+    refreshPlanner();
   } catch (err) {
     console.error("failed to toggle task:", err);
   }
@@ -1303,6 +1313,10 @@ let editingTaskId = null;
 
 let taskModalFromCalendar = false;
 
+const taskPinnedInput = document.getElementById("task-pinned-input");
+const taskDepsInput   = document.getElementById("task-deps-input");
+const taskDepsField   = document.getElementById("task-deps-field");
+
 function openTaskModal(task = null, opts = {}) {
   editingTaskId = task ? task.id : null;
   taskModalFromCalendar = opts.fromCalendar || false;
@@ -1312,6 +1326,18 @@ function openTaskModal(task = null, opts = {}) {
   taskDueInput.value = task?.dueDate
     ? task.dueDate.slice(0, 10)
     : (opts.date || new Date().toLocaleDateString("en-CA"));
+  taskPinnedInput.checked = !!task?.pinned;
+  // dependencies can only be chosen among tasks of the open assessment
+  const siblings = taskModalFromCalendar ? [] : state.tasks.filter(t => t.id !== task?.id);
+  taskDepsInput.innerHTML = "";
+  for (const t of siblings) {
+    const opt = document.createElement("option");
+    opt.value = t.id;
+    opt.textContent = t.title;
+    opt.selected = (task?.dependsOn || []).includes(t.id);
+    taskDepsInput.appendChild(opt);
+  }
+  taskDepsField.classList.toggle("hidden", siblings.length === 0);
   taskModal.classList.remove("hidden");
   taskTitleInput.focus();
 }
@@ -1322,7 +1348,8 @@ cancelTaskBtn.addEventListener("click", () => taskModal.classList.add("hidden"))
 saveTaskBtn.addEventListener("click", async () => {
   const title = taskTitleInput.value.trim();
   if (!title) { alert("give the task a description 💛"); return; }
-  if (!state.currentProject) return;
+  // editing works from anywhere; creating needs an open assessment to attach the task to
+  if (!editingTaskId && !state.currentProject) { alert("open an assessment first to add a task to it 💛"); return; }
 
   saveTaskBtn.disabled = true;
   try {
@@ -1331,7 +1358,11 @@ saveTaskBtn.addEventListener("click", async () => {
         title,
         estimatedMinutes: parseInt(taskMinutesInput.value) || null,
         dueDate: taskDueInput.value || null,
+        pinned: taskPinnedInput.checked,
       };
+      if (!taskDepsField.classList.contains("hidden")) {
+        body.dependsOn = [...taskDepsInput.selectedOptions].map(o => o.value);
+      }
       const updated = await api(`/tasks/${editingTaskId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
@@ -1349,6 +1380,8 @@ saveTaskBtn.addEventListener("click", async () => {
           title,
           estimatedMinutes: parseInt(taskMinutesInput.value) || 30,
           dueDate: taskDueInput.value || null,
+          pinned: taskPinnedInput.checked,
+          dependsOn: [...taskDepsInput.selectedOptions].map(o => o.value),
         }),
       });
       state.tasks.push(task);
@@ -1357,9 +1390,11 @@ saveTaskBtn.addEventListener("click", async () => {
     taskModal.classList.add("hidden");
     if (taskModalFromCalendar) {
       renderCalendar();
+      refreshPlanner();
     } else {
       renderTasks(state.tasks);
       renderEstimateBanner(state.tasks, state.currentProject);
+      refreshPlanner();
     }
   } catch (err) {
     alert(`couldn't save: ${err.message}`);
@@ -2207,8 +2242,13 @@ calendarBtn.addEventListener("click", async () => {
 async function loadCalendar() {
   const termId = termSelect.value || state.currentTermId;
   try {
-    const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
+    const [data] = await Promise.all([
+      api(`/calendar${termId ? `?termId=${termId}` : ""}`),
+      loadForecast(termId).catch(() => null),
+    ]);
     calTasks = data.tasks;
+    setDeadlines(data.deadlines);
+    renderPlannerTop();
     renderCalendar();
     if (localStorage.getItem("margin_notif") === "1" &&
         !sessionStorage.getItem("margin_notif_fired")) {
@@ -2292,6 +2332,7 @@ function renderCalendar() {
     header.appendChild(dayName);
     header.appendChild(dayNum);
     col.appendChild(header);
+    col.appendChild(buildDayInfo(dayStr));
 
     const tasksEl = document.createElement("div");
     tasksEl.className = "cal-tasks";
@@ -2350,6 +2391,7 @@ function buildCalTaskPill(task) {
       const stateIdx = state.tasks.findIndex(t => t.id === task.id);
       if (stateIdx !== -1) state.tasks[stateIdx] = updated;
       renderCalendar();
+      refreshPlanner();
     } catch (err) {
       console.error("failed to toggle task:", err);
     }
@@ -2394,6 +2436,7 @@ async function rescheduleTask(taskId, newDate) {
       method: "PATCH",
       body: JSON.stringify({ dueDate: newDate }),
     });
+    refreshPlanner();
   } catch (err) {
     console.error("failed to reschedule task:", err);
     // revert by reloading

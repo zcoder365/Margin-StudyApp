@@ -199,16 +199,44 @@ export function clear(node) {
 }
 
 let toastTimer = null;
-export function toast(message, type = "info") {
+// action: optional { label, onClick } rendered as a button inside the toast (e.g. Undo)
+export function toast(message, type = "info", action = null) {
   let box = document.getElementById("toast");
   if (!box) {
     box = el("div.toast", { id: "toast", role: "status", "aria-live": "polite" });
     document.body.appendChild(box);
   }
-  box.textContent = message;
-  box.className = `toast show ${type}`;
+  clear(box);
+  box.appendChild(el("span", message));
+  if (action) {
+    box.appendChild(el("button.toast-action", { type: "button", onclick: () => { box.classList.remove("show"); action.onClick(); } }, action.label));
+  }
+  box.className = `toast show ${type}${action ? " has-action" : ""}`;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => box.classList.remove("show"), 4500);
+  toastTimer = setTimeout(() => box.classList.remove("show"), action ? 12000 : 4500);
+}
+
+// generic modal shell; returns { overlay, body, footer, close }
+export function openModal(title, { wide = false, onClose } = {}) {
+  const previous = document.activeElement;
+  const body = el("div.modal-body");
+  const footer = el("div.modal-footer");
+  const close = () => { overlay.remove(); previous?.focus?.(); onClose?.(); };
+  const overlay = el("div.modal", { role: "dialog", "aria-modal": "true", "aria-label": title },
+    el(`div.modal-content${wide ? ".wide" : ""}`,
+      el("div.modal-header", el("h3", title),
+        el("button.modal-close", { type: "button", "aria-label": "close", onclick: close }, "✕")),
+      body, footer));
+  overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  document.body.appendChild(overlay);
+  setTimeout(() => overlay.querySelector(".modal-close")?.focus(), 0);
+  return { overlay, body, footer, close };
+}
+
+export function nowMinutes() {
+  const d = new Date();
+  return d.getHours() * 60 + d.getMinutes();
 }
 
 export function loading(text = "Loading…") {

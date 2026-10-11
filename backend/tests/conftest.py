@@ -84,6 +84,9 @@ class ApiClient:
     def post(self, path, json=None, **kw):
         return self.c.post("/api" + path, json=json, headers=self._h(), **kw)
 
+    def put(self, path, json=None):
+        return self.c.put("/api" + path, json=json, headers=self._h())
+
     def patch(self, path, json=None):
         return self.c.patch("/api" + path, json=json, headers=self._h())
 

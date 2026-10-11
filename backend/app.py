@@ -1,47 +1,22 @@
 import os
-import re
-import base64
-import json
+import io
+import logging
 from datetime import datetime, timedelta
-from functools import wraps
 
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
 from dotenv import load_dotenv
 
-from google import genai
-import firebase_admin
-from firebase_admin import credentials, auth, firestore
+from firebase_admin import firestore
 
 load_dotenv()
 
+from core import (  # noqa: E402  (load_dotenv must run first)
+    get_db, user_doc, require_auth, serialize_timestamps,
+)
+from ai import get_ai, AIError  # noqa: E402
 
-# -----------------------------------------------------------------------------
-# firebase admin SDK initialization
-# -----------------------------------------------------------------------------
-def init_firebase():
-    creds_value = os.environ.get("FIREBASE_CREDENTIALS")
-    if not creds_value:
-        raise RuntimeError("FIREBASE_CREDENTIALS env var is not set.")
-
-    if os.path.isfile(creds_value):
-        cred = credentials.Certificate(creds_value)
-    else:
-        try:
-            decoded = base64.b64decode(creds_value).decode("utf-8")
-            cred_dict = json.loads(decoded)
-            cred = credentials.Certificate(cred_dict)
-        except Exception as e:
-            raise RuntimeError(f"FIREBASE_CREDENTIALS is neither a valid file path nor valid base64 json: {e}")
-
-    firebase_admin.initialize_app(cred)
-
-
-init_firebase()
-db = firestore.client()
-
-# gemini client for pdf → task breakdown
-gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+log = logging.getLogger("margin")
 
 
 # -----------------------------------------------------------------------------
@@ -49,53 +24,16 @@ gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 # -----------------------------------------------------------------------------
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-only-do-not-use-in-prod")
+# uploads are capped at 10MB (plus multipart overhead); larger requests get a 413
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
 
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
 
 
-# -----------------------------------------------------------------------------
-# auth decorator
-# -----------------------------------------------------------------------------
-def require_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth_header = request.headers.get("Authorization", "")
-        if not auth_header.startswith("Bearer "):
-            return jsonify({"error": "missing or malformed Authorization header"}), 401
-
-        id_token = auth_header.split("Bearer ", 1)[1].strip()
-
-        try:
-            decoded = auth.verify_id_token(id_token)
-            g.user_id = decoded["uid"]
-            g.user_email = decoded.get("email")
-        except auth.InvalidIdTokenError:
-            return jsonify({"error": "invalid id token"}), 401
-        except auth.ExpiredIdTokenError:
-            return jsonify({"error": "id token expired, please re-authenticate"}), 401
-        except Exception as e:
-            return jsonify({"error": f"auth failed: {str(e)}"}), 401
-
-        return f(*args, **kwargs)
-    return decorated
-
-
-# -----------------------------------------------------------------------------
-# helpers
-# -----------------------------------------------------------------------------
-def user_doc(user_id):
-    return db.collection("users").document(user_id)
-
-
-def serialize_timestamps(data, fields):
-    """convert firestore timestamp fields to ISO strings for JSON serialization."""
-    for field in fields:
-        if data.get(field):
-            val = data[field]
-            if hasattr(val, "isoformat"):
-                data[field] = val.isoformat()
-    return data
+@app.errorhandler(413)
+def too_large(_e):
+    return jsonify({"error": "file is too large — the limit is 10MB"}), 413
 
 
 # -----------------------------------------------------------------------------
@@ -158,7 +96,7 @@ def init_user():
             "user": user_snapshot.to_dict(),
         })
 
-    batch = db.batch()
+    batch = get_db().batch()
     body = request.get_json(silent=True) or {}
     display_name = body.get("displayName", "")
 
@@ -480,8 +418,45 @@ def delete_project(project_id):
 
 
 # -----------------------------------------------------------------------------
-# pdf upload + claude task breakdown
+# pdf upload + ai task breakdown
 # -----------------------------------------------------------------------------
+TASK_BREAKDOWN_PROMPT = (
+    "You are a study assistant. Given the following assignment text, "
+    "break it down into a list of specific, actionable tasks a student needs to complete. "
+    "For each task, estimate how many minutes it will take.\n\n"
+    "Respond with ONLY a JSON array. Each element must have:\n"
+    "  \"title\": short task description (max 80 chars)\n"
+    "  \"estimatedMinutes\": integer\n\n"
+    "Assignment text:\n"
+)
+
+
+def normalize_task_breakdown(raw):
+    """validate the model's task list; drop malformed entries instead of trusting them."""
+    if isinstance(raw, dict):
+        raw = raw.get("tasks", [])
+    if not isinstance(raw, list):
+        return []
+    tasks = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()[:120]
+        if not title:
+            continue
+        est = item.get("estimatedMinutes")
+        if not isinstance(est, (int, float)) or est <= 0:
+            est = 30
+        tasks.append({"title": title, "estimatedMinutes": int(min(est, 600))})
+    return tasks[:40]
+
+
+def read_pdf_pages(pdf_bytes):
+    from pypdf import PdfReader
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    return [page.extract_text() or "" for page in reader.pages]
+
+
 @app.route("/api/projects/<project_id>/upload", methods=["POST"])
 @require_auth
 def upload_assignment_pdf(project_id):
@@ -497,63 +472,45 @@ def upload_assignment_pdf(project_id):
 
     pdf_file = request.files["pdf"]
     pdf_bytes = pdf_file.read()
-
-    # extract text with pypdf — no AI needed for now
-    import io
-    from pypdf import PdfReader
+    if not pdf_bytes.startswith(b"%PDF-"):
+        return jsonify({"error": "that file doesn't look like a PDF"}), 400
 
     try:
-        reader = PdfReader(io.BytesIO(pdf_bytes))
-        pages = [page.extract_text() or "" for page in reader.pages]
+        pages = read_pdf_pages(pdf_bytes)
         extracted_text = "\n\n".join(pages).strip()
-    except Exception as e:
-        return jsonify({"error": f"could not read pdf: {str(e)}"}), 500
+    except Exception:
+        return jsonify({"error": "could not read that PDF — it may be encrypted or damaged"}), 400
 
     total_estimated = 0
     raw_tasks = []
+    warning = None
 
     if extracted_text:
         try:
-            response = gemini_client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=(
-                    "You are a study assistant. Given the following assignment text, "
-                    "break it down into a list of specific, actionable tasks a student needs to complete. "
-                    "For each task, estimate how many minutes it will take.\n\n"
-                    "Respond with ONLY a JSON array. Each element must have:\n"
-                    "  \"title\": short task description (max 80 chars)\n"
-                    "  \"estimatedMinutes\": integer\n\n"
-                    "Assignment text:\n" + extracted_text[:12000]
-                ),
-            )
-            import json as _json
-            text_content = response.text.strip()
-            if text_content.startswith("```"):
-                text_content = text_content.split("```")[1]
-                if text_content.startswith("json"):
-                    text_content = text_content[4:]
-            raw_tasks = _json.loads(text_content.strip())
-            total_estimated = sum(t.get("estimatedMinutes", 30) for t in raw_tasks)
-        except Exception as e:
-            print(f"Gemini task generation failed: {e}")
-            raw_tasks = []
+            raw_tasks = normalize_task_breakdown(get_ai().generate_json(TASK_BREAKDOWN_PROMPT + extracted_text[:12000]))
+            if not raw_tasks:
+                warning = "the AI didn't return any usable tasks — your existing tasks were kept"
+        except AIError as e:
+            log.warning("task generation failed: %s", e.kind)
+            warning = f"couldn't generate tasks ({e}) — your existing tasks were kept"
+        total_estimated = sum(t["estimatedMinutes"] for t in raw_tasks)
+    else:
+        warning = "no text could be read from this PDF (it may be scanned) — no tasks were generated"
 
-    # delete any existing ai-generated tasks for this project before adding new ones
-    existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).where("aiGenerated", "==", True).stream()
-    delete_batch = db.batch()
-    for doc in existing_tasks:
-        delete_batch.delete(doc.reference)
-    delete_batch.commit()
-
-    # save extracted text + estimate to project
-    project_ref.update({
-        "extractedText": extracted_text,
-        "totalEstimatedMinutes": total_estimated,
-    })
+    batch = get_db().batch()
+    project_updates = {"extractedText": extracted_text}
+    if raw_tasks:
+        project_updates["totalEstimatedMinutes"] = total_estimated
+        # replace the previous ai-generated tasks only once new ones exist; completed ones are kept
+        existing_tasks = user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).stream()
+        for doc in existing_tasks:
+            d = doc.to_dict()
+            if d.get("aiGenerated") and d.get("status") != "done":
+                batch.delete(doc.reference)
+    batch.update(project_ref, project_updates)
 
     # create tasks in firestore
     course_id = project_data.get("courseId")
-    create_batch = db.batch()
     created_tasks = []
 
     for i, task in enumerate(raw_tasks):
@@ -561,8 +518,8 @@ def upload_assignment_pdf(project_id):
         task_data = {
             "projectId": project_id,
             "courseId": course_id,
-            "title": task.get("title", f"Task {i + 1}"),
-            "estimatedMinutes": task.get("estimatedMinutes", 30),
+            "title": task["title"],
+            "estimatedMinutes": task["estimatedMinutes"],
             "timeSpent": None,
             "status": "pending",
             "dueDate": datetime.fromisoformat(datetime.utcnow().date().isoformat()),
@@ -575,18 +532,29 @@ def upload_assignment_pdf(project_id):
             "order": i,
             "createdAt": firestore.SERVER_TIMESTAMP,
         }
-        create_batch.set(task_ref, task_data)
+        batch.set(task_ref, task_data)
         row = {k: v for k, v in task_data.items() if k != "createdAt"}
         row["id"] = task_ref.id
         row["dueDate"] = task_data["dueDate"].isoformat()
         created_tasks.append(row)
 
-    create_batch.commit()
+    batch.commit()
+
+    # return the full task list so the client stays in sync when tasks were kept
+    tasks = []
+    for doc in user_doc(g.user_id).collection("tasks").where("projectId", "==", project_id).stream():
+        t = doc.to_dict()
+        t["id"] = doc.id
+        serialize_timestamps(t, ["dueDate", "scheduledDate", "originalScheduledDate", "completedAt", "createdAt"])
+        tasks.append(t)
+    tasks.sort(key=lambda t: t.get("order", 0))
 
     return jsonify({
-        "tasks": created_tasks,
+        "tasks": tasks,
+        "createdTasks": created_tasks,
         "extractedText": extracted_text,
-        "totalEstimatedMinutes": total_estimated,
+        "totalEstimatedMinutes": total_estimated if raw_tasks else project_data.get("totalEstimatedMinutes"),
+        "warning": warning,
     }), 201
 
 
@@ -649,12 +617,19 @@ def add_grade(course_id):
     if score is None or total is None:
         return jsonify({"error": "score and total are required"}), 400
 
+    try:
+        score, total = float(score), float(total)
+    except (TypeError, ValueError):
+        return jsonify({"error": "score and total must be numbers"}), 400
+    if total <= 0:
+        return jsonify({"error": "total must be greater than 0"}), 400
+
     grade_ref = course_ref.collection("grades").document()
     grade_data = {
         "categoryId": category_id,
         "name": name,
-        "score": float(score),
-        "total": float(total),
+        "score": score,
+        "total": total,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
     grade_ref.set(grade_data)
@@ -678,10 +653,13 @@ def update_grade(course_id, grade_id):
     updates = {}
     if "name" in body:
         updates["name"] = body["name"].strip()
-    if "score" in body:
-        updates["score"] = float(body["score"])
-    if "total" in body:
-        updates["total"] = float(body["total"])
+    try:
+        if "score" in body:
+            updates["score"] = float(body["score"])
+        if "total" in body:
+            updates["total"] = float(body["total"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "score and total must be numbers"}), 400
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
 
@@ -968,7 +946,7 @@ def auto_schedule(project_id):
     current_day, current_free = next(day_iter)
     current_capacity = current_free * MINUTES_PER_FREE_HOUR
 
-    batch = db.batch()
+    batch = get_db().batch()
     updated_tasks = []
 
     for task in pending:
@@ -1047,4 +1025,6 @@ def get_calendar():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # the werkzeug debugger allows code execution, so only enable it explicitly for local dev
+    debug = os.environ.get("FLASK_DEBUG") == "1" or os.environ.get("FLASK_ENV") == "development"
+    app.run(host="0.0.0.0", port=port, debug=debug)

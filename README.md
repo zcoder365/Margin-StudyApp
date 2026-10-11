@@ -49,6 +49,18 @@ most planners assume infinite time. margin starts with the time you actually hav
 - optional estimate adjustment: after at least 5 finished tasks with logged time, margin can scale estimates by how long your tasks really take (shrunk toward 1× so a few tasks can't swing it)
 - assessment deadlines and milestones appear on the calendar; each day shows planned vs. free time
 
+### practice & knowledge gaps (diagnostics)
+
+- each course gets a concept map: margin proposes concepts from your confirmed learning objectives and course material, and you keep, rename or drop them (or add your own). concepts link to assessments through their objectives
+- short diagnostics (4–8 questions) focus on your weakest and least-practised concepts, or on one upcoming assessment
+- question types: multiple choice, numeric (checked exactly — `3/4`, `0.75` and `sqrt(9)/4` all count) and short answer (you compare with a model answer and grade yourself — the AI never grades you)
+- optional confidence rating before seeing the answer; confident mistakes are highlighted as possible misconceptions
+- every question shows whether it's grounded in your material (with the quoted passage and page) or an AI-generated example, and that its answer key is AI-written. flag wrong or unclear questions — they're withdrawn and stop counting
+- generated questions are validated before you see them (structure, answer key, concept links, no "this will be on the exam" claims); if generation fails margin reuses your question bank or falls back to self-check prompts
+- concept status — **needs practice**, **not enough evidence**, **developing**, **demonstrated** — comes from published rules over your recent answers (recency- and difficulty-weighted). one right answer is never "mastery"; confidence never counts as evidence
+- the knowledge-gap board shows the evidence behind every label, recurring error patterns, recent mistakes to revisit, and a practice plan prioritised by weakness and how soon the assessment is
+- "add practice to my schedule" proposes sessions in free time left after your existing plan (max 2 a day, before the assessment) — you adjust dates and minutes before anything is added
+
 ### calendar
 
 - weekly calendar view of all tasks across every course, color-coded by course

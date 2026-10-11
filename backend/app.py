@@ -19,6 +19,7 @@ from ai import get_ai, AIError  # noqa: E402
 from services.documents import ASSESSMENT_KINDS, validate_review_fields, DocumentError  # noqa: E402
 from routes.documents import bp as documents_bp, store_document, delete_document_data  # noqa: E402
 from routes.planning import bp as planning_bp  # noqa: E402
+from routes.diagnostics import bp as diagnostics_bp  # noqa: E402
 
 log = logging.getLogger("margin")
 
@@ -37,6 +38,7 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credenti
 
 app.register_blueprint(documents_bp)
 app.register_blueprint(planning_bp)
+app.register_blueprint(diagnostics_bp)
 
 
 @app.errorhandler(413)
@@ -143,6 +145,8 @@ def init_user():
 COURSE_SCOPED_COLLECTIONS = (
     "objectives", "concepts", "questions", "attempts", "diagnosticSessions", "studySessions",
 )
+# per-course documents keyed by course id
+COURSE_KEYED_COLLECTIONS = ("conceptSuggestions",)
 
 
 def delete_project_data(uid, project_id):
@@ -162,6 +166,8 @@ def delete_course_data(uid, course_id):
     for name in COURSE_SCOPED_COLLECTIONS:
         ops += [("delete", d.reference, None)
                 for d in user_doc(uid).collection(name).where("courseId", "==", course_id).stream()]
+    for name in COURSE_KEYED_COLLECTIONS:
+        ops.append(("delete", user_doc(uid).collection(name).document(course_id), None))
     grading = user_doc(uid).collection("courses").document(course_id)
     ops += [("delete", d.reference, None) for d in grading.collection("grades").stream()]
     ops.append(("delete", grading.collection("grading").document("scheme"), None))

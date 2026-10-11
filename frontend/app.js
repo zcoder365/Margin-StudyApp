@@ -17,6 +17,7 @@ import {
 import { renderCourseDocuments, stopDocumentPolling } from "./documents.js";
 import { renderAssessmentOverview, loadStoredPdf } from "./assessment.js";
 import { loadForecast, renderPlannerTop, buildDayInfo, setDeadlines, refreshPlanner } from "./planner.js";
+import { renderPracticeTab } from "./diagnostics.js";
 
 
 // ---------------------------------------------------------------------------
@@ -160,7 +161,8 @@ const viewGrades      = document.getElementById("view-grades");
 const viewCalendar    = document.getElementById("view-calendar");
 const viewProgress    = document.getElementById("view-progress");
 const viewReview      = document.getElementById("view-review");
-const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar, progress: viewProgress, review: viewReview };
+const viewDiagnostic  = document.getElementById("view-diagnostic");
+const VIEWS = { home: viewHome, dashboard: viewDashboard, course: viewCourse, assignment: viewAssignment, grades: viewGrades, profile: viewProfile, calendar: viewCalendar, progress: viewProgress, review: viewReview, diagnostic: viewDiagnostic };
 
 function showView(name) {
   for (const [key, el] of Object.entries(VIEWS)) {
@@ -244,6 +246,16 @@ function renderBreadcrumb(view) {
       sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
       sep(), crumbLink(state.currentCourse.name, () => { showView("course"); loadAssignments(state.currentCourse.id); }),
       sep(), crumbCurrent("grade calculator"),
+    );
+    return;
+  }
+
+  if (view === "diagnostic" && state.currentCourse) {
+    breadcrumb.append(
+      sep(), crumbLink("home", goHome),
+      sep(), crumbLink(state.currentTerm?.name || "term", goTerm),
+      sep(), crumbLink(state.currentCourse.name, () => openCourse(state.currentCourse, "practice")),
+      sep(), crumbCurrent("diagnostic"),
     );
     return;
   }
@@ -701,9 +713,9 @@ function renderCourses(courses) {
 const COURSE_TABS = [
   { id: "assessments", label: "Assessments" },
   { id: "documents", label: "Documents" },
+  { id: "practice", label: "Practice & gaps" },
 ];
-nav.courseTabs = COURSE_TABS;          // later sections append their own tabs
-nav.courseTabRenderers = {};
+nav.courseTabRenderers = { practice: renderPracticeTab };
 
 async function openCourse(course, tab = "assessments") {
   state.currentCourse = course;

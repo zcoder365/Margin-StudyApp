@@ -22,6 +22,7 @@ from firebase_admin import firestore
 from core import (
     get_db, user_doc, require_auth, bad_request, stream_dicts, to_jsonable,
     as_date, date_to_storage, run_job, parse_client_today, commit_in_chunks,
+    ai_allowed, ai_limited_response,
 )
 from ai import get_ai, AIError
 from services import diagnostics as dx
@@ -164,6 +165,8 @@ def suggest_concepts(cid):
         return bad_request("concept suggestions are already being prepared", 409)
     if not course_objectives(uid, cid) and not any(d.get("hasText") for d in stream_dicts(_col(uid, "documents").where("courseId", "==", cid))):
         return bad_request("add course documents or confirmed learning objectives first, so suggestions can be based on your material")
+    if not ai_allowed(uid, "concepts"):
+        return ai_limited_response()
     _suggest_ref(uid, cid).set({"status": "processing", "error": None, "suggestions": [], "startedAt": firestore.SERVER_TIMESTAMP})
     run_job(run_concept_suggestions, uid, cid)
     return jsonify({"status": "processing"}), 202
@@ -344,6 +347,8 @@ def create_session():
         chosen = [c for c in concepts if c["id"] in wanted]
         if not chosen:
             return bad_request("none of those concepts belong to this course")
+    if not ai_allowed(uid, "questions"):
+        return ai_limited_response()
     ref = _col(uid, "diagnosticSessions").document()
     ref.set({
         "courseId": cid, "assessmentId": assessment_id, "conceptIds": [c["id"] for c in chosen],

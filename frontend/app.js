@@ -19,6 +19,7 @@ import { renderAssessmentOverview, loadStoredPdf } from "./assessment.js";
 import { loadForecast, renderPlannerTop, buildDayInfo, setDeadlines, refreshPlanner } from "./planner.js";
 import { renderPracticeTab } from "./diagnostics.js";
 import { logSession, renderSessionFollowUp, renderInsights } from "./insights.js";
+import { renderHomeOverview } from "./home.js";
 
 
 
@@ -180,6 +181,17 @@ nav.showView = showView;
 nav.reloadCalendar = () => loadCalendar();
 nav.rerenderCalendar = () => renderCalendar();
 nav.refreshAfterPlanChange = () => refreshPlanner(true);
+nav.openTerm = (term) => openTerm(term);
+nav.selectCourseById = async (courseId, tab) => {
+  let course = state.currentCourse?.id === courseId ? state.currentCourse : null;
+  if (!course) {
+    const { courses } = await api("/courses?termId=all");
+    course = courses.find(c => c.id === courseId) || null;
+    state.currentCourse = course;
+  }
+  if (course && tab) await openCourse(course, tab);
+  return course;
+};
 nav.onStudyLogged = async () => {
   if (viewAssignment.classList.contains("hidden") || !state.currentProject) return;
   try {
@@ -234,7 +246,7 @@ function renderBreadcrumb(view) {
 
   if (view === "home") return;
   if (view === "profile")  { breadcrumb.append(sep(), crumbCurrent("profile")); return; }
-  if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("calendar")); return; }
+  if (view === "calendar") { breadcrumb.append(sep(), crumbCurrent("planner")); return; }
   if (view === "progress") { breadcrumb.append(sep(), crumbCurrent("progress")); return; }
 
   if (view === "dashboard") {
@@ -390,10 +402,18 @@ onAuthStateChanged(auth, async (user) => {
     signedOutView.classList.add("hidden");
     signedInView.classList.remove("hidden");
     userEmailEl.textContent = user.email;
+    profileBtn.textContent = "";
     if (user.photoURL) {
-      profileBtn.innerHTML = `<img src="${user.photoURL}" alt="" class="profile-photo" />`;
+      const img = document.createElement("img");
+      img.src = user.photoURL;
+      img.alt = "";
+      img.className = "profile-photo";
+      profileBtn.appendChild(img);
     } else {
-      profileBtn.innerHTML = `<span id="profile-initials">${(user.displayName || user.email || "?")[0].toUpperCase()}</span>`;
+      const span = document.createElement("span");
+      span.id = "profile-initials";
+      span.textContent = (user.displayName || user.email || "?")[0].toUpperCase();
+      profileBtn.appendChild(span);
     }
 
     try {
@@ -465,6 +485,10 @@ async function loadHome() {
       api("/courses?termId=all"),
     ]);
     renderHome(termsData.terms, coursesData.courses);
+    const term = termsData.terms.find(t => t.id === (termsData.currentTermId || state.currentTermId));
+    if (term) state.currentTerm = term;
+    const courseCount = coursesData.courses.filter(c => c.termId === term?.id).length;
+    renderHomeOverview(document.getElementById("home-overview"), term, courseCount);
   } catch (err) {
     console.error("failed to load home:", err);
   }
@@ -1945,11 +1969,18 @@ profilePageBtn.addEventListener("click", async () => {
   // populate avatar
   const avatarRow = document.getElementById("profile-avatar-row");
   const authUser = auth.currentUser;
+  avatarRow.textContent = "";
   if (authUser?.photoURL) {
-    avatarRow.innerHTML = `<img src="${authUser.photoURL}" alt="Profile photo" class="profile-avatar-img" />`;
+    const img = document.createElement("img");
+    img.src = authUser.photoURL;
+    img.alt = "Profile photo";
+    img.className = "profile-avatar-img";
+    avatarRow.appendChild(img);
   } else {
-    const initials = (authUser?.displayName || authUser?.email || "?")[0].toUpperCase();
-    avatarRow.innerHTML = `<div class="profile-avatar-fallback">${initials}</div>`;
+    const div = document.createElement("div");
+    div.className = "profile-avatar-fallback";
+    div.textContent = (authUser?.displayName || authUser?.email || "?")[0].toUpperCase();
+    avatarRow.appendChild(div);
   }
 
   try {

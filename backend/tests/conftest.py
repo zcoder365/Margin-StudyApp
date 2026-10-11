@@ -64,6 +64,7 @@ def fake_ai():
 def app(db, fake_ai):
     core.set_token_verifier(fake_verify)
     core.set_sync_jobs(True)
+    core.reset_rate_limits()
     import app as app_module
     app_module.app.config["TESTING"] = True
     yield app_module.app

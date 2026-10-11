@@ -8,8 +8,10 @@ fake token verifier with set_db() / set_token_verifier().
 
 import os
 import json
+import time
 import base64
 import threading
+from collections import deque
 from datetime import datetime, date, timezone
 from functools import wraps
 
@@ -231,3 +233,41 @@ def run_job(fn, *args, **kwargs):
         return
     t = threading.Thread(target=fn, args=args, kwargs=kwargs, daemon=True)
     t.start()
+
+
+# -----------------------------------------------------------------------------
+# per-user limits on endpoints that trigger paid ai calls
+# -----------------------------------------------------------------------------
+# in-memory, per process: enough to stop runaway clients and accidental loops.
+# a multi-instance deployment would need a shared store (see README).
+AI_LIMITS_PER_HOUR = {
+    "extract": int(os.environ.get("MARGIN_AI_EXTRACT_PER_HOUR", 20)),
+    "tasks": int(os.environ.get("MARGIN_AI_TASKS_PER_HOUR", 20)),
+    "concepts": int(os.environ.get("MARGIN_AI_CONCEPTS_PER_HOUR", 10)),
+    "questions": int(os.environ.get("MARGIN_AI_QUESTIONS_PER_HOUR", 30)),
+}
+_rate = {}
+_rate_lock = threading.Lock()
+
+
+def ai_allowed(uid, kind):
+    """record one use of an ai-backed action; False if the hourly limit is reached."""
+    limit = AI_LIMITS_PER_HOUR[kind]
+    now = time.monotonic()
+    with _rate_lock:
+        q = _rate.setdefault((uid, kind), deque())
+        while q and now - q[0] > 3600:
+            q.popleft()
+        if len(q) >= limit:
+            return False
+        q.append(now)
+        return True
+
+
+def reset_rate_limits():
+    with _rate_lock:
+        _rate.clear()
+
+
+def ai_limited_response():
+    return jsonify({"error": "you've hit the hourly limit for AI features — try again a bit later"}), 429

@@ -343,3 +343,29 @@ def insights():
         "pastAssessments": review_rows,
         "notes": ["Logged time comes from study sessions (the timer or “log study time”). Time typed directly into a task isn't dated, so it isn't in the weekly view."],
     }))
+
+
+# -----------------------------------------------------------------------------
+# home overview: things waiting on the student
+# -----------------------------------------------------------------------------
+@bp.route("/api/overview/pending", methods=["GET"])
+@require_auth
+def pending():
+    from routes.planning import _term_id
+    uid = g.user_id
+    term_id = _term_id(uid, request.args.get("termId"))
+    courses = {c["id"]: c for c in stream_dicts(_col(uid, "courses").where("termId", "==", term_id))} if term_id else {}
+    docs, sessions = [], []
+    for cid, c in courses.items():
+        for d in stream_dicts(_col(uid, "documents").where("courseId", "==", cid)):
+            if d.get("status") in ("needs_review", "processing", "failed") or (d.get("status") == "reviewed" and d.get("pendingItems")):
+                docs.append({"id": d["id"], "filename": d.get("filename"), "status": d.get("status"), "courseId": cid,
+                             "courseName": c.get("name"), "pendingItems": d.get("pendingItems")})
+        for s in stream_dicts(_col(uid, "diagnosticSessions").where("courseId", "==", cid)):
+            if s.get("status") in ("ready", "in_progress"):
+                sessions.append({"id": s["id"], "courseId": cid, "courseName": c.get("name"), "createdAt": s.get("createdAt")})
+    week_start = datetime.now(timezone.utc).date()
+    week_start -= timedelta(days=week_start.weekday())
+    logged = sum(s.get("actualMinutes") or 0 for s in stream_dicts(_col(uid, "studySessions"))
+                 if fb._d(s.get("endedAt")) and fb._d(s.get("endedAt")) >= week_start)
+    return jsonify(to_jsonable({"documents": docs, "sessions": sessions, "loggedThisWeekMinutes": round(logged)}))

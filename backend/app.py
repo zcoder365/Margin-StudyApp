@@ -13,7 +13,7 @@ load_dotenv()
 
 from core import (  # noqa: E402  (load_dotenv must run first)
     get_db, user_doc, require_auth, serialize_timestamps, to_jsonable,
-    commit_in_chunks, stream_dicts, as_date,
+    commit_in_chunks, stream_dicts, as_date, ai_allowed, ai_limited_response,
 )
 from ai import get_ai, AIError  # noqa: E402
 from services.documents import ASSESSMENT_KINDS, validate_review_fields, DocumentError  # noqa: E402
@@ -572,7 +572,13 @@ def upload_assignment_pdf(project_id):
     raw_tasks = []
     warning = None
 
-    if extracted_text:
+    if extracted_text and not ai_allowed(g.user_id, "tasks"):
+        extracted_text_for_ai = None
+        warning = "you've hit the hourly limit for AI features — the PDF was saved, but tasks weren't generated"
+    else:
+        extracted_text_for_ai = extracted_text
+
+    if extracted_text_for_ai:
         try:
             raw_tasks = normalize_task_breakdown(get_ai().generate_json(TASK_BREAKDOWN_PROMPT + extracted_text[:12000]))
             if not raw_tasks:
@@ -581,7 +587,7 @@ def upload_assignment_pdf(project_id):
             log.warning("task generation failed: %s", e.kind)
             warning = f"couldn't generate tasks ({e}) — your existing tasks were kept"
         total_estimated = sum(t["estimatedMinutes"] for t in raw_tasks)
-    else:
+    elif not extracted_text:
         warning = "no text could be read from this PDF (it may be scanned) — no tasks were generated"
 
     batch = get_db().batch()

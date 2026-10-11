@@ -13,6 +13,11 @@ most planners assume infinite time. margin starts with the time you actually hav
 
 ## features
 
+### home: semester overview
+
+- the home page opens on your current term: next steps (documents to review, assessments that don't fit, unfinished diagnostics, near-term items margin can't forecast yet), what's coming up in the next three weeks with its workload label, free vs. planned time for the next 7 days, and study logged this week
+- every item links straight to where it's handled; your terms are listed below
+
 ### organization
 
 - terms → courses → assignments → tasks hierarchy

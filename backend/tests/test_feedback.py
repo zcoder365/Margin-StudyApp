@@ -236,3 +236,13 @@ def test_review_wording_for_work_logged_after_due():
     assert r["prep"]["daysBeforeDue"] == -2
     assert any("after the due date" in o for o in r["observations"])
     assert not any("-2 days" in o for o in r["observations"])
+
+
+def test_overview_pending(client, setup, other_client, fake_ai):
+    from tests.conftest import make_pdf
+    fake_ai.queue({"assessments": [{"title": "Final", "kind": "exam"}]})
+    client.upload(f"/courses/{setup['course']['id']}/documents", "file", make_pdf(["Final exam TBA"]), "s.pdf", extra={"docType": "syllabus"})
+    client.post("/study-sessions", json={"clientId": cid(), "projectId": setup["proj"]["id"], "actualMinutes": 45})
+    r = client.get("/overview/pending").get_json()
+    assert r["documents"][0]["status"] == "needs_review" and r["loggedThisWeekMinutes"] == 45
+    assert other_client.get("/overview/pending").get_json() == {"documents": [], "sessions": [], "loggedThisWeekMinutes": 0}

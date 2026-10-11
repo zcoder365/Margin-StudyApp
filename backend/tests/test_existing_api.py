@@ -169,3 +169,17 @@ def test_user_isolation(client, other_client):
     assert other_client.patch(f"/projects/{proj['id']}", json={"title": "pwned"}).status_code == 404
     assert other_client.post("/tasks", json={"projectId": proj["id"], "title": "x"}).status_code == 404
     assert other_client.get(f"/courses/{course['id']}/grading").status_code == 404
+
+
+def test_ai_endpoints_are_rate_limited(client, fake_ai, monkeypatch):
+    import core
+    monkeypatch.setitem(core.AI_LIMITS_PER_HOUR, "extract", 2)
+    course = make_course(client)
+    pdf = make_pdf(["Syllabus text"])
+    for _ in range(2):
+        fake_ai.queue({"assessments": []})
+        assert client.upload(f"/courses/{course['id']}/documents", "file", pdf, "s.pdf", extra={"docType": "syllabus"}).status_code == 202
+    r = client.upload(f"/courses/{course['id']}/documents", "file", pdf, "s.pdf", extra={"docType": "syllabus"})
+    assert r.status_code == 429
+    # storing without ai extraction is still allowed
+    assert client.upload(f"/courses/{course['id']}/documents", "file", pdf, "s.pdf", extra={"docType": "syllabus", "extract": "0"}).status_code == 202

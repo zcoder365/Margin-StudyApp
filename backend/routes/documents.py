@@ -22,6 +22,7 @@ from firebase_admin import firestore
 from core import (
     get_db, user_doc, require_auth, bad_request, stream_dicts, to_jsonable,
     as_date, date_to_storage, commit_in_chunks, run_job, parse_client_today,
+    ai_allowed, ai_limited_response,
 )
 from ai import get_ai, AIError
 from services import documents as docsvc
@@ -135,6 +136,10 @@ def upload_document(course_id):
     if doc_type not in docsvc.DOC_TYPES:
         return bad_request("unknown document type")
 
+    extract = request.form.get("extract", "1") == "1"
+    if extract and not ai_allowed(uid, "extract"):
+        return ai_limited_response()
+
     assessment_id = request.form.get("assessmentId") or None
     if assessment_id:
         snap = user_doc(uid).collection("projects").document(assessment_id).get()
@@ -146,7 +151,6 @@ def upload_document(course_id):
     except docsvc.DocumentError as e:
         return bad_request(str(e))
 
-    extract = request.form.get("extract", "1") == "1"
     if extract:
         if not any(p.strip() for p in pages):
             _doc_ref(uid, doc_id).update({
@@ -320,6 +324,8 @@ def process_document(doc_id):
     if meta.get("status") == "processing" and started and datetime.now(timezone.utc) - started < STALE_PROCESSING:
         return bad_request("this document is already being processed", 409)
     body = request.get_json(silent=True) or {}
+    if not ai_allowed(uid, "extract"):
+        return ai_limited_response()
     _start_extraction(uid, doc_id, force=bool(body.get("force")), today=body.get("today"))
     d = _doc_ref(uid, doc_id).get().to_dict()
     d["id"] = doc_id

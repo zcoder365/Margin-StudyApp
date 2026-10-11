@@ -28,6 +28,17 @@ most planners assume infinite time. margin starts with the time you actually hav
 - check off tasks as you complete them and log time spent per task
 - auto-schedule tasks across your free days based on your weekly schedule and due date
 
+### course documents (syllabus intelligence)
+
+- upload a syllabus, assignment brief, rubric, exam review sheet, project brief or lecture notes (PDF, .txt or .md, up to 10MB) to a course
+- margin extracts assessments, due dates, grade weights, workload, requirements, milestones and learning objectives in the background
+- every extracted item is shown in a review screen with its page reference and the highlighted source passage — edit, confirm, reject or leave it for later
+- missing or ambiguous information (no date, "TBA", year not written, weights that don't add to 100%, quotes that can't be found in the file) is flagged, never filled in
+- AI-suggested values (like a workload guess) are labelled separately from facts stated in the document
+- matching assessments you already have are offered as updates (with date conflicts highlighted), so re-extracting a document never creates duplicates
+- only confirmed items reach your courses and planner; the original file is kept and viewable
+- assignment PDFs uploaded on an assignment page are now stored too, so they're still there after a reload
+
 ### calendar
 
 - weekly calendar view of all tasks across every course, color-coded by course

@@ -12,9 +12,12 @@ from firebase_admin import firestore
 load_dotenv()
 
 from core import (  # noqa: E402  (load_dotenv must run first)
-    get_db, user_doc, require_auth, serialize_timestamps,
+    get_db, user_doc, require_auth, serialize_timestamps, to_jsonable,
+    commit_in_chunks, stream_dicts, as_date,
 )
 from ai import get_ai, AIError  # noqa: E402
+from services.documents import ASSESSMENT_KINDS, validate_review_fields, DocumentError  # noqa: E402
+from routes.documents import bp as documents_bp, store_document, delete_document_data  # noqa: E402
 
 log = logging.getLogger("margin")
 
@@ -29,6 +32,9 @@ app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
 
 allowed_origins = os.environ.get("ALLOWED_ORIGINS", "").split(",")
 CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credentials=True)
+
+
+app.register_blueprint(documents_bp)
 
 
 @app.errorhandler(413)
@@ -129,6 +135,39 @@ def init_user():
 
 
 # -----------------------------------------------------------------------------
+# cascading deletes
+# -----------------------------------------------------------------------------
+# collections whose documents carry a courseId and belong to exactly one course
+COURSE_SCOPED_COLLECTIONS = (
+    "objectives", "concepts", "questions", "attempts", "diagnosticSessions", "studySessions",
+)
+
+
+def delete_project_data(uid, project_id):
+    ops = [("delete", d.reference, None)
+           for d in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream()]
+    ops.append(("delete", user_doc(uid).collection("projects").document(project_id), None))
+    commit_in_chunks(ops)
+
+
+def delete_course_data(uid, course_id):
+    """delete a course and everything that belongs to it (documents, diagnostics, history)."""
+    for p in user_doc(uid).collection("projects").where("courseId", "==", course_id).stream():
+        delete_project_data(uid, p.id)
+    for d in user_doc(uid).collection("documents").where("courseId", "==", course_id).stream():
+        delete_document_data(uid, d.id)
+    ops = []
+    for name in COURSE_SCOPED_COLLECTIONS:
+        ops += [("delete", d.reference, None)
+                for d in user_doc(uid).collection(name).where("courseId", "==", course_id).stream()]
+    grading = user_doc(uid).collection("courses").document(course_id)
+    ops += [("delete", d.reference, None) for d in grading.collection("grades").stream()]
+    ops.append(("delete", grading.collection("grading").document("scheme"), None))
+    ops.append(("delete", grading, None))
+    commit_in_chunks(ops)
+
+
+# -----------------------------------------------------------------------------
 # terms
 # -----------------------------------------------------------------------------
 @app.route("/api/terms", methods=["GET"])
@@ -200,16 +239,10 @@ def update_term(term_id):
 def delete_term(term_id):
     uid = g.user_id
 
-    # cascade: delete all tasks, projects, and courses belonging to this term
+    # cascade: delete every course (and its data) belonging to this term
     courses = list(user_doc(uid).collection("courses").where("termId", "==", term_id).stream())
     for course_doc in courses:
-        cid = course_doc.id
-        projects = list(user_doc(uid).collection("projects").where("courseId", "==", cid).stream())
-        for project_doc in projects:
-            for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
-                task_doc.reference.delete()
-            project_doc.reference.delete()
-        course_doc.reference.delete()
+        delete_course_data(uid, course_doc.id)
 
     user_doc(uid).collection("terms").document(term_id).delete()
 
@@ -296,13 +329,9 @@ def update_course(course_id):
 @require_auth
 def delete_course(course_id):
     uid = g.user_id
-    projects = list(user_doc(uid).collection("projects").where("courseId", "==", course_id).stream())
-    for project_doc in projects:
-        for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_doc.id).stream():
-            task_doc.reference.delete()
-        project_doc.reference.delete()
-
-    user_doc(uid).collection("courses").document(course_id).delete()
+    if not user_doc(uid).collection("courses").document(course_id).get().exists:
+        return jsonify({"error": "course not found"}), 404
+    delete_course_data(uid, course_id)
     return jsonify({"deleted": course_id})
 
 
@@ -321,10 +350,37 @@ def list_projects():
     for doc in projects_ref.stream():
         p = doc.to_dict()
         p["id"] = doc.id
-        serialize_timestamps(p, ["dueDate", "createdAt"])
-        projects.append(p)
+        if request.args.get("light") == "1":
+            p.pop("extractedText", None)
+        projects.append(to_jsonable(p))
 
     return jsonify({"projects": projects})
+
+
+@app.route("/api/projects/<project_id>", methods=["GET"])
+@require_auth
+def get_project(project_id):
+    snap = user_doc(g.user_id).collection("projects").document(project_id).get()
+    if not snap.exists:
+        return jsonify({"error": "project not found"}), 404
+    p = snap.to_dict()
+    p["id"] = project_id
+    return jsonify(to_jsonable(p))
+
+
+def assessment_field_updates(body):
+    """validate the optional assessment fields (kind, weight, estimatedHours) → (updates, error)."""
+    fields = {k: body[k] for k in ("kind", "weight", "estimatedHours") if k in body}
+    if not fields:
+        return {}, None
+    probe = {"title": "x", "kind": fields.get("kind", "other"), **{k: v for k, v in fields.items() if k != "kind"}}
+    clean, errors = validate_review_fields(probe)
+    if errors:
+        return None, "; ".join(errors)
+    updates = {k: clean[k] for k in fields}
+    if "estimatedHours" in fields:
+        updates["estimatedHoursOrigin"] = "student" if clean["estimatedHours"] is not None else None
+    return updates, None
 
 
 @app.route("/api/projects", methods=["POST"])
@@ -350,6 +406,10 @@ def create_project():
         except ValueError:
             return jsonify({"error": "dueDate must be ISO format (YYYY-MM-DD)"}), 400
 
+    extra, err = assessment_field_updates(body)
+    if err:
+        return jsonify({"error": err}), 400
+
     project_ref = user_doc(g.user_id).collection("projects").document()
     project_data = {
         "courseId": course_id,
@@ -358,19 +418,15 @@ def create_project():
         "extractedText": None,
         "totalEstimatedMinutes": None,
         "status": "active",
+        "origin": "manual",
+        **extra,
         "createdAt": firestore.SERVER_TIMESTAMP,
     }
     project_ref.set(project_data)
 
-    return jsonify({
-        "id": project_ref.id,
-        "courseId": course_id,
-        "title": title,
-        "dueDate": due_date.isoformat() if due_date else None,
-        "status": "active",
-        "extractedText": None,
-        "totalEstimatedMinutes": None,
-    }), 201
+    row = {k: v for k, v in project_data.items() if k != "createdAt"}
+    row["id"] = project_ref.id
+    return jsonify(to_jsonable(row)), 201
 
 
 @app.route("/api/projects/<project_id>", methods=["PATCH"])
@@ -397,23 +453,26 @@ def update_project(project_id):
             updates["completedAt"] = firestore.SERVER_TIMESTAMP
         else:
             updates["completedAt"] = None
+    extra, err = assessment_field_updates(body)
+    if err:
+        return jsonify({"error": err}), 400
+    updates.update(extra)
     if not updates:
         return jsonify({"error": "nothing to update"}), 400
 
     project_ref.update(updates)
     fresh = project_ref.get().to_dict()
     fresh["id"] = project_id
-    serialize_timestamps(fresh, ["dueDate", "createdAt", "completedAt"])
-    return jsonify(fresh)
+    return jsonify(to_jsonable(fresh))
 
 
 @app.route("/api/projects/<project_id>", methods=["DELETE"])
 @require_auth
 def delete_project(project_id):
     uid = g.user_id
-    for task_doc in user_doc(uid).collection("tasks").where("projectId", "==", project_id).stream():
-        task_doc.reference.delete()
-    user_doc(uid).collection("projects").document(project_id).delete()
+    if not user_doc(uid).collection("projects").document(project_id).get().exists:
+        return jsonify({"error": "project not found"}), 404
+    delete_project_data(uid, project_id)
     return jsonify({"deleted": project_id})
 
 
@@ -481,6 +540,24 @@ def upload_assignment_pdf(project_id):
     except Exception:
         return jsonify({"error": "could not read that PDF — it may be encrypted or damaged"}), 400
 
+    # keep the original file so it can be viewed again later and processed for requirements
+    course_id = project_data.get("courseId")
+    course_snap = user_doc(g.user_id).collection("courses").document(course_id).get()
+    document_id = None
+    if course_snap.exists:
+        try:
+            document_id, _ = store_document(
+                g.user_id, course_snap.to_dict(), course_id, pdf_bytes, pdf_file.filename,
+                "pdf", "assignment", assessment_id=project_id)
+        except DocumentError:
+            document_id = None
+        old_id = project_data.get("documentId")
+        if document_id and old_id:
+            old = user_doc(g.user_id).collection("documents").document(old_id).get()
+            # replace the previous upload unless the student already reviewed it
+            if old.exists and old.to_dict().get("status") == "stored":
+                delete_document_data(g.user_id, old_id)
+
     total_estimated = 0
     raw_tasks = []
     warning = None
@@ -499,6 +576,8 @@ def upload_assignment_pdf(project_id):
 
     batch = get_db().batch()
     project_updates = {"extractedText": extracted_text}
+    if document_id:
+        project_updates["documentId"] = document_id
     if raw_tasks:
         project_updates["totalEstimatedMinutes"] = total_estimated
         # replace the previous ai-generated tasks only once new ones exist; completed ones are kept
@@ -510,7 +589,6 @@ def upload_assignment_pdf(project_id):
     batch.update(project_ref, project_updates)
 
     # create tasks in firestore
-    course_id = project_data.get("courseId")
     created_tasks = []
 
     for i, task in enumerate(raw_tasks):
@@ -554,6 +632,7 @@ def upload_assignment_pdf(project_id):
         "createdTasks": created_tasks,
         "extractedText": extracted_text,
         "totalEstimatedMinutes": total_estimated if raw_tasks else project_data.get("totalEstimatedMinutes"),
+        "documentId": document_id,
         "warning": warning,
     }), 201
 
@@ -990,7 +1069,7 @@ def get_calendar():
         user_snap = user_doc(uid).get()
         term_id = user_snap.to_dict().get("currentTermId") if user_snap.exists else None
     if not term_id:
-        return jsonify({"tasks": []})
+        return jsonify({"tasks": [], "deadlines": []})
 
     # courses for this term
     courses = {}
@@ -1014,10 +1093,24 @@ def get_calendar():
             t["courseName"] = course.get("name", "")
             t["courseColor"] = course.get("color", "#ccc")
             t["projectTitle"] = project.get("title", "")
-            serialize_timestamps(t, ["dueDate", "createdAt"])
-            result.append(t)
+            result.append(to_jsonable(t))
 
-    return jsonify({"tasks": result})
+    # assessment deadlines and milestones (confirmed data only) for the planner
+    deadlines = []
+    for project_id, project in projects.items():
+        course = courses[project["courseId"]]
+        base = {"projectId": project_id, "courseId": project["courseId"], "courseName": course.get("name", ""),
+                "courseColor": course.get("color", "#ccc"), "projectTitle": project.get("title", ""),
+                "kind": project.get("kind"), "status": project.get("status", "active")}
+        due = as_date(project.get("dueDate"))
+        if due:
+            deadlines.append({**base, "type": "deadline", "title": project.get("title", ""), "date": due.isoformat()})
+        for m in project.get("milestones") or []:
+            md = as_date(m.get("dueDate"))
+            if md:
+                deadlines.append({**base, "type": "milestone", "title": m.get("title", ""), "date": md.isoformat()})
+
+    return jsonify({"tasks": result, "deadlines": deadlines})
 
 
 # -----------------------------------------------------------------------------

@@ -77,11 +77,17 @@ most planners assume infinite time. margin starts with the time you actually hav
 - per-course progress dashboard: tasks done vs. remaining, time spent vs. estimated
 - progress bars colored to match each course
 
-### study sessions
+### study sessions & the feedback loop
 
 - built-in study timer per task — hit ▶ on any task to start a session
 - customizable work interval (default 25 min)
-- auto-logs elapsed time to the task when the session completes
+- auto-logs elapsed time to the task when the session completes; **stop & log** keeps a shorter session, and closing the timer offers to log what you did
+- after a session, an optional one-tap follow-up: finished the task? how did it go? a short note
+- "log study time" on any assessment for prep that isn't tied to a task (e.g. exam review)
+- add an assessment's result (optional) — with how it went compared with what you expected, and optionally copy it into the grade calculator
+- each finished assessment gets a review: planned vs. logged time, how your estimates compared, when recorded work started, what the forecast said along the way, which linked concepts had evidence by the due date, and one or two things to try next time — always labelled as observations from a single assessment, never as causes
+- the progress page adds suggestions backed by your own data (only once there's enough of it): adjust estimates, lower an over-full daily limit, run a diagnostic before an upcoming assessment, practise concepts that still need work. each shows its evidence and can be dismissed
+- planned vs. logged study by week, how long tasks really take (overall and per course), and concept status now vs. two weeks ago
 
 ### schedule
 

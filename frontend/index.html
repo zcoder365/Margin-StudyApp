@@ -124,6 +124,8 @@
         <div class="section-header">
           <h2>Progress</h2>
         </div>
+        <div id="insights-area" class="insights-area"></div>
+        <h3 class="sub-section-title">Tasks and time by course</h3>
         <div id="progress-grid" class="progress-grid"></div>
       </div>
 
@@ -462,9 +464,11 @@
     </div>
     <div class="timer-controls">
       <button id="timer-start-btn" class="btn btn-primary btn-sm">Start</button>
+      <button id="timer-stop-btn" class="btn btn-ghost btn-sm" title="stop now and log the minutes so far">Stop &amp; log</button>
       <button id="timer-reset-btn" class="btn btn-ghost btn-sm">Reset</button>
     </div>
-    <div id="timer-done-msg" class="timer-done-msg hidden">session complete — time logged 💛</div>
+    <div id="timer-done-msg" class="timer-done-msg hidden" role="status">session complete — time logged 💛</div>
+    <div id="timer-followup" class="timer-followup"></div>
   </div>
 
   <!-- keyboard shortcuts overlay -->

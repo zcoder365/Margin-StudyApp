@@ -18,6 +18,8 @@ import { renderCourseDocuments, stopDocumentPolling } from "./documents.js";
 import { renderAssessmentOverview, loadStoredPdf } from "./assessment.js";
 import { loadForecast, renderPlannerTop, buildDayInfo, setDeadlines, refreshPlanner } from "./planner.js";
 import { renderPracticeTab } from "./diagnostics.js";
+import { logSession, renderSessionFollowUp, renderInsights } from "./insights.js";
+
 
 
 // ---------------------------------------------------------------------------
@@ -178,6 +180,16 @@ nav.showView = showView;
 nav.reloadCalendar = () => loadCalendar();
 nav.rerenderCalendar = () => renderCalendar();
 nav.refreshAfterPlanChange = () => refreshPlanner(true);
+nav.onStudyLogged = async () => {
+  if (viewAssignment.classList.contains("hidden") || !state.currentProject) return;
+  try {
+    const data = await api(`/tasks?projectId=${state.currentProject.id}`);
+    state.tasks = data.tasks;
+    renderTasks(state.tasks);
+    renderEstimateBanner(state.tasks, state.currentProject);
+  } catch { /* the list refreshes on next open */ }
+  refreshPlanner();
+};
 nav.onForecastChanged = () => {
   if (!viewAssignment.classList.contains("hidden") && state.currentProject) renderAssessmentOverview(state.currentProject);
 };
@@ -2094,6 +2106,7 @@ progressBtn.addEventListener("click", async () => {
 
 async function loadProgress() {
   const termId = termSelect.value || state.currentTermId;
+  renderInsights(document.getElementById("insights-area"), termId);
   try {
     const data = await api(`/calendar${termId ? `?termId=${termId}` : ""}`);
     renderProgress(data.tasks);
@@ -2493,7 +2506,10 @@ let timer = {
   remaining: 0,
   running: false,
   intervalId: null,
+  startedAt: null,
 };
+const timerStopBtn  = document.getElementById("timer-stop-btn");
+const timerFollowUp = document.getElementById("timer-followup");
 
 function startTimerForTask(task) {
   // if a different task was running, stop it first
@@ -2505,8 +2521,10 @@ function startTimerForTask(task) {
   timer.remaining    = timer.totalSeconds;
   timer.running      = false;
   timer.intervalId   = null;
+  timer.startedAt    = null;
 
   timerDoneMsg.classList.add("hidden");
+  timerFollowUp.innerHTML = "";
   timerTaskName.textContent = task.title;
   timerStartBtn.textContent = "Start";
   timerPanel.classList.remove("hidden");
@@ -2549,6 +2567,10 @@ timerStartBtn.addEventListener("click", () => {
   } else {
     // start / resume
     timer.running = true;
+    timer.logged = false;
+    if (!timer.startedAt) timer.startedAt = new Date().toISOString();
+    timerDoneMsg.classList.add("hidden");
+    timerFollowUp.innerHTML = "";
     timer.intervalId = setInterval(() => {
       timer.remaining--;
       updateTimerDisplay();
@@ -2570,6 +2592,7 @@ timerResetBtn.addEventListener("click", () => {
   timer.intervalId = null;
   timer.running = false;
   timer.remaining = timer.totalSeconds;
+  timer.startedAt = null;
   timerDoneMsg.classList.add("hidden");
   updateTimerDisplay();
   updateTimerProgress();
@@ -2577,7 +2600,12 @@ timerResetBtn.addEventListener("click", () => {
   refreshTaskTimerBtns();
 });
 
-timerCloseBtn.addEventListener("click", () => {
+timerCloseBtn.addEventListener("click", async () => {
+  const elapsed = timer.logged ? 0 : Math.round((timer.totalSeconds - timer.remaining) / 60);
+  if (elapsed >= 1 && confirm(`Log the ${elapsed} min you studied before closing?`)) {
+    clearInterval(timer.intervalId);
+    await logTimerSession(elapsed);
+  }
   clearInterval(timer.intervalId);
   timer.intervalId = null;
   timer.running = false;
@@ -2587,30 +2615,51 @@ timerCloseBtn.addEventListener("click", () => {
 });
 
 async function onTimerComplete() {
-  const elapsedMinutes = Math.round((timer.totalSeconds - timer.remaining) / 60);
   timerStartBtn.textContent = "Start";
-  timerDoneMsg.classList.remove("hidden");
   refreshTaskTimerBtns();
+  await logTimerSession(Math.round(timer.totalSeconds / 60));
+}
 
-  // auto-log time to the task
-  if (timer.taskId && elapsedMinutes > 0) {
-    try {
-      const task = state.tasks.find(t => t.id === timer.taskId);
-      const existing = task?.timeSpent || 0;
-      const updated = await api(`/tasks/${timer.taskId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ timeSpent: existing + elapsedMinutes }),
-      });
-      const idx = state.tasks.findIndex(t => t.id === timer.taskId);
-      if (idx !== -1) {
-        state.tasks[idx] = updated;
-        const el = taskList.querySelector(`[data-task-id="${timer.taskId}"]`);
-        if (el) el.replaceWith(buildTaskItem(updated));
-        renderEstimateBanner(state.tasks, state.currentProject);
-      }
-    } catch (err) {
-      console.error("failed to log timer time:", err);
+// stop early and keep the minutes studied so far
+timerStopBtn.addEventListener("click", async () => {
+  const elapsed = Math.round((timer.totalSeconds - timer.remaining) / 60);
+  clearInterval(timer.intervalId);
+  timer.intervalId = null;
+  timer.running = false;
+  refreshTimerButtons();
+  refreshTaskTimerBtns();
+  if (elapsed < 1) { timerDoneMsg.textContent = "less than a minute — nothing logged"; timerDoneMsg.classList.remove("hidden"); return; }
+  await logTimerSession(elapsed);
+  timer.remaining = timer.totalSeconds;
+  updateTimerDisplay();
+  updateTimerProgress();
+});
+
+// record the session (adds the minutes to the task) and offer the optional follow-up
+async function logTimerSession(minutes) {
+  if (!timer.taskId || minutes <= 0) return;
+  const taskId = timer.taskId;
+  try {
+    const session = await logSession({
+      taskId, actualMinutes: minutes, plannedMinutes: Math.round(timer.totalSeconds / 60), startedAt: timer.startedAt,
+    });
+    timer.startedAt = null;
+    timer.logged = true;
+    timerDoneMsg.textContent = `${minutes} min logged 💛`;
+    timerDoneMsg.classList.remove("hidden");
+    const updated = session.task;
+    const idx = state.tasks.findIndex(t => t.id === taskId);
+    if (idx !== -1 && updated) {
+      state.tasks[idx] = updated;
+      const el = taskList.querySelector(`[data-task-id="${taskId}"]`);
+      if (el) el.replaceWith(buildTaskItem(updated));
+      renderEstimateBanner(state.tasks, state.currentProject);
     }
+    renderSessionFollowUp(timerFollowUp, session, { onTaskDone: () => nav.onStudyLogged?.() });
+    refreshPlanner();
+  } catch (err) {
+    timerDoneMsg.textContent = `couldn't log this session: ${err.message}`;
+    timerDoneMsg.classList.remove("hidden");
   }
 }
 

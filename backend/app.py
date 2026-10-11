@@ -20,6 +20,7 @@ from services.documents import ASSESSMENT_KINDS, validate_review_fields, Documen
 from routes.documents import bp as documents_bp, store_document, delete_document_data  # noqa: E402
 from routes.planning import bp as planning_bp  # noqa: E402
 from routes.diagnostics import bp as diagnostics_bp  # noqa: E402
+from routes.feedback import bp as feedback_bp  # noqa: E402
 
 log = logging.getLogger("margin")
 
@@ -39,6 +40,7 @@ CORS(app, resources={r"/api/*": {"origins": allowed_origins}}, supports_credenti
 app.register_blueprint(documents_bp)
 app.register_blueprint(planning_bp)
 app.register_blueprint(diagnostics_bp)
+app.register_blueprint(feedback_bp)
 
 
 @app.errorhandler(413)

@@ -13,6 +13,7 @@ confirmed items get deterministic ids ({docId}-{itemKey}) so re-applying or
 reprocessing a document updates instead of duplicating.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -288,6 +289,13 @@ def run_extraction(uid, doc_id, force=False, today=None):
             })
         extraction["generatedAt"] = datetime.now(timezone.utc).isoformat()
         extraction["promptVersion"] = docsvc.PROMPT_VERSION
+        # firestore documents max out at 1MB: only keep the raw response (used to skip
+        # repeat ai calls for identical files) when it's comfortably small
+        raw_size = len(json.dumps(raw, default=str))
+        if len(json.dumps(extraction, default=str)) + min(raw_size, 10**7) > 800_000:
+            if len(json.dumps(extraction, default=str)) > 800_000:
+                raise docsvc.DocumentError("this document produced more extracted items than margin can store at once — try uploading a shorter section")
+            raw = None
         ref.update({
             "status": "needs_review",
             "extraction": extraction,

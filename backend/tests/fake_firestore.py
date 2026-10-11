@@ -9,6 +9,7 @@ firestore, naive datetimes come back as timezone-aware UTC values.
 
 import copy
 import itertools
+import re
 from datetime import datetime, timezone
 
 _ids = itertools.count(1)
@@ -20,6 +21,28 @@ def _now():
 
 def _is_transform(value, name):
     return type(value).__name__ == name
+
+
+def _check_storable(value, path="value"):
+    """reject values the real firestore client can't encode (plain dates, sets, objects)."""
+    from datetime import date as _date
+    if value is None or isinstance(value, (bool, int, float, str, bytes, datetime)):
+        return
+    if isinstance(value, _date):
+        raise TypeError(f"{path}: firestore can't store a date without a time — use a datetime")
+    if isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            _check_storable(v, f"{path}[{i}]")
+        return
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if not isinstance(k, str):
+                raise TypeError(f"{path}: map keys must be strings")
+            _check_storable(v, f"{path}.{k}")
+        return
+    if type(value).__name__ in ("Sentinel", "Increment", "ArrayUnion", "ArrayRemove"):
+        return
+    raise TypeError(f"{path}: firestore can't store {type(value).__name__}")
 
 
 def _normalize(value):
@@ -49,6 +72,7 @@ def _apply_value(existing, value):
         return base
     if _is_transform(value, "ArrayRemove"):
         return [v for v in (existing or []) if v not in value.values]
+    _check_storable(value)
     return _normalize(copy.deepcopy(value))
 
 
@@ -128,6 +152,12 @@ class FakeDocumentRef:
         self._db.docs[self.path] = base
 
     def update(self, data):
+        # like the real client, update() keys are field paths: each dotted part must be
+        # a simple identifier unless it is `backtick-quoted`
+        for key in data:
+            for part in key.split("."):
+                if not (re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", part) or re.fullmatch(r"`[^`]+`", part)):
+                    raise ValueError(f"invalid field path component: {part!r}")
         if self.path not in self._db.docs:
             raise NotFound(f"no document to update: {self.path}")
         base = copy.deepcopy(self._db.docs[self.path])

@@ -272,7 +272,7 @@ def get_review(project_id):
 @bp.route("/api/insights", methods=["GET"])
 @require_auth
 def insights():
-    from routes.planning import load_inputs, all_task_history, _term_id
+    from routes.planning import load_inputs, all_task_history, _term_id, load_acks, ack_state
     from routes.diagnostics import course_concepts, concept_assessments, compute_mastery, course_attempts, course_questions
     uid = g.user_id
     today = parse_client_today(request.args.get("today"))
@@ -324,11 +324,9 @@ def insights():
 
     recs = fb.recommendations(today, history, {cid: c.get("name", "") for cid, c in inputs["courses"].items()},
                               inputs["availability"], upcoming_concepts, recent_activity, weak_by_assessment, reviews)
-    acks_snap = user_doc(uid).collection("planning").document("acks").get()
-    acks = (acks_snap.to_dict() or {}) if acks_snap.exists else {}
+    acks = load_acks(uid)
     for r in recs:
-        a = acks.get(r["id"].replace(".", "_"))
-        r["ack"] = a.get("state") if a and a.get("fingerprint") == r["fingerprint"] else None
+        r["ack"] = ack_state(acks, r)
 
     calibration = wl.estimate_calibration(history)
     per_course = []

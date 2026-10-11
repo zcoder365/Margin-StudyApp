@@ -5,7 +5,9 @@
 
 give yourself margin.
 
-margin is a study planner for university students that organizes coursework by term and class, breaks assignments into tasks using AI, schedules them around your real availability, and tracks your grades — all in one quiet, focused tool.
+margin is a study planner for university students. it helps you answer three questions: **what do i need to do? what do i actually understand? do i have enough time to prepare properly?**
+
+it reads your syllabus and assignment briefs (you confirm everything it finds), forecasts whether your remaining work fits into the time you actually have, rebuilds your plan when you fall behind, diagnoses which concepts you can't yet apply before an exam does, and compares what you planned with what happened so the next plan is more realistic — all in one quiet, focused tool.
 
 ## why margin?
 
@@ -128,7 +130,10 @@ most planners assume infinite time. margin starts with the time you actually hav
 - **database:** Firestore (Firebase)
 - **auth:** Firebase Google Auth
 - **pdf parsing:** pypdf
-- **ai:** Google Gemini API (Gemini 3.5 Flash) — PDF → task breakdown with time estimates
+- **ai:** Google Gemini API (`google-genai`, model set by `GEMINI_MODEL`, default `gemini-2.5-flash`) — used only to extract data from documents, suggest concepts, write diagnostic questions and break assignments into tasks. every AI output is validated, labelled, and confirmed by you before it counts
+- **tests:** pytest with an in-memory Firestore fake (no credentials or paid AI calls needed)
+
+developer guide (architecture, data model, the rules behind every label, API, security and data-retention policy): [docs/academic-planning.md](docs/academic-planning.md)
 
 ## local dev
 
@@ -139,20 +144,30 @@ git clone https://github.com/your-username/Margin-StudyApp.git
 cd Margin-StudyApp
 ```
 
-<!-- ### 2. environment variables
+### 2. environment variables
 
 create a `.env` file in the project root:
 
 ```text
-FIREBASE_CREDENTIALS=/absolute/path/to/firebase-key.json
+FIREBASE_CREDENTIALS=/absolute/path/to/firebase-key.json   # or the base64-encoded JSON
+GEMINI_API_KEY=your-gemini-key                             # AI features show a clear error without it
+GEMINI_MODEL=gemini-2.5-flash                              # optional
 FLASK_SECRET_KEY=your-secret
 ALLOWED_ORIGINS=http://localhost:3000
 PORT=5000
+FLASK_DEBUG=1                                              # local only — enables the werkzeug debugger
+# optional per-user hourly AI limits (defaults shown)
+# MARGIN_AI_EXTRACT_PER_HOUR=20
+# MARGIN_AI_TASKS_PER_HOUR=20
+# MARGIN_AI_CONCEPTS_PER_HOUR=10
+# MARGIN_AI_QUESTIONS_PER_HOUR=30
 ```
 
-get `firebase-key.json` from: Firebase Console → Project settings → Service accounts → Generate new private key. -->
+get `firebase-key.json` from: Firebase Console → Project settings → Service accounts → Generate new private key. never commit it (it's in `.gitignore`).
 
-### 2. run
+the frontend calls `http://localhost:5000/api` by default. when deploying, set `window.MARGIN_API_BASE = "https://your-backend/api"` in a script tag before `app.js`.
+
+### 3. run
 
 ```bash
 ./dev.sh
@@ -160,11 +175,28 @@ get `firebase-key.json` from: Firebase Console → Project settings → Service 
 
 `dev.sh` sets up the venv if needed, starts the backend and frontend, and opens `http://localhost:3000`. press Ctrl+C to stop.
 
+if `venv/bin/python` fails with "bad CPU type" (a venv copied from a different machine), recreate it: `python3 -m venv --clear venv && venv/bin/pip install -r requirements.txt`.
+
+### 4. tests
+
+```bash
+venv/bin/pip install -r requirements-dev.txt
+cd backend && ../venv/bin/python -m pytest
+```
+
+no Firebase credentials or AI key are needed — tests use an in-memory Firestore and a fake AI provider.
+
+### deploying
+
+- no database migration is needed: every new field is optional
+- set Firestore security rules to deny all client access (the backend uses the Admin SDK) — see the developer guide
+- long-running AI work runs in background threads; run the backend as a long-lived process (not a short-lived serverless function)
+
 ## future development
 
-- [ ] "Am I cooked?" radar that gives students an honest study plan before their final exam
-- [ ] A study reflection after grades are received (which methods were used, how the student felt about the grade)
-- [ ] Reminders for tasks and assignments
+- [x] "Am I cooked?" radar — the workload forecast, risks and "I'm behind" recovery
+- [x] A study reflection after grades are received — results, reflections and assessment reviews
+- [ ] Reminders for tasks and assignments (browser notifications exist; email/push don't yet)
 
 ## built by
 

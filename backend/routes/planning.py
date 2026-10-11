@@ -11,6 +11,7 @@ firestore (under users/{uid}):
 tasks keep the existing meaning of `dueDate` = the day the task is planned for.
 """
 
+import hashlib
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, request, jsonify, g
@@ -30,6 +31,22 @@ HISTORY_LIMIT = 60
 
 def _planning(uid, name):
     return user_doc(uid).collection("planning").document(name)
+
+
+def ack_key(risk_id):
+    """risk ids contain ':' etc., which aren't valid firestore field paths — store under a hash."""
+    return "a_" + hashlib.sha1(risk_id.encode()).hexdigest()[:20]
+
+
+def load_acks(uid):
+    snap = _planning(uid, "acks").get()
+    return (snap.to_dict() or {}) if snap.exists else {}
+
+
+def ack_state(acks, item):
+    a = acks.get(ack_key(item["id"]))
+    # a dismissal only holds while the underlying numbers are unchanged
+    return a.get("state") if a and a.get("fingerprint") == item["fingerprint"] else None
 
 
 def _now_minutes(raw):
@@ -100,12 +117,9 @@ def compute_forecast(uid, term_id, today, now_minutes=None):
     logged = logged_minutes_by_assessment(uid, {a["id"] for a in inputs["assessments"]})
     result = wl.forecast(today, inputs["assessments"], inputs["tasks"], inputs["availability"], inputs["busy"],
                          calibration=calibration, now_minutes=now_minutes, logged_by_assessment=logged)
-    acks_snap = _planning(uid, "acks").get()
-    acks = (acks_snap.to_dict() or {}) if acks_snap.exists else {}
+    acks = load_acks(uid)
     for r in result["risks"]:
-        a = acks.get(r["id"].replace(".", "_"))
-        # a dismissal only holds while the underlying numbers are unchanged
-        r["ack"] = a.get("state") if a and a.get("fingerprint") == r["fingerprint"] else None
+        r["ack"] = ack_state(acks, r)
     return result, inputs
 
 
@@ -174,14 +188,14 @@ def ack_risk():
         return bad_request("riskId is required")
     if state not in ("dismissed", "acknowledged", None):
         return bad_request("state must be dismissed, acknowledged or null")
-    key = risk_id.replace(".", "_")
+    key = ack_key(risk_id)
     ref = _planning(g.user_id, "acks")
     if not ref.get().exists:
         ref.set({})
     if state is None:
         ref.update({key: firestore.DELETE_FIELD})
     else:
-        ref.update({key: {"state": state, "fingerprint": str(fp), "at": datetime.now(timezone.utc).isoformat()}})
+        ref.update({key: {"riskId": risk_id, "state": state, "fingerprint": str(fp), "at": datetime.now(timezone.utc).isoformat()}})
     return jsonify({"riskId": risk_id, "state": state})
 
 

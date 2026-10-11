@@ -395,3 +395,10 @@ def test_auto_schedule_skips_pinned_tasks(client, setup):
     assert setup["t2"]["id"] not in [t["id"] for t in r["tasks"]]
     t2 = next(t for t in client.get(f"/tasks?projectId={setup['proj']['id']}").get_json()["tasks"] if t["id"] == setup["t2"]["id"])
     assert t2["dueDate"][:10] == iso(2)
+
+
+def test_acks_work_for_ids_with_special_characters(client, setup):
+    r = client.get(f"/planning/forecast?today={TODAY.isoformat()}").get_json()
+    rid = "at_risk:" + setup["proj"]["id"] + "-x.y/z"
+    assert client.post("/planning/acks", json={"riskId": rid, "state": "dismissed", "fingerprint": "f"}).status_code == 200
+    assert client.post("/planning/acks", json={"riskId": rid, "state": None}).status_code == 200
